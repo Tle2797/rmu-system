@@ -1,4 +1,3 @@
-// app/(dashboard)/layout.tsx
 import { cookies } from "next/headers";
 import { verifyToken } from "@/server/auth/session";
 import Sidebar from "@/components/layout/Sidebar";
@@ -19,13 +18,15 @@ export default async function DashboardLayout({
   const missingDept = needDept && !user?.departmentCode;
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
+    <div className="h-[100svh] overflow-hidden lg:grid lg:grid-cols-[280px_1fr]">
       <Sidebar
         username={user?.username}
         role={user?.role}
         departmentCode={user?.departmentCode}
       />
-      <main className="bg-slate-50 min-h-screen">
+
+      {/* ให้ฝั่งขวาเป็น "ตัวเลื่อนเดียว" ของหน้าหลังล็อกอิน */}
+      <main className="bg-slate-50 h-[100svh] overflow-y-auto overflow-x-hidden">
         {missingDept ? (
           <div className="max-w-3xl mx-auto p-6">
             <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 p-4">

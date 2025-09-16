@@ -18,7 +18,7 @@ export default function SurveyIndexPage() {
   const [rows, setRows] = useState<DepartmentRow[]>([]);
   const [q, setQ] = useState("");
 
-  // ---------- คิวอาร์ “ส่วนกลาง” ----------
+  // ---------- คิวอาร์ "ส่วนกลาง" ----------
   // ใช้ลิงก์แบบ relative สำหรับ SSR/CSR ให้เหมือนกัน → กัน hydration mismatch
   const CENTRAL_RELATIVE = "/survey";
   // คำนวณลิงก์เต็มหลัง mount (client only) เพื่อให้คัดลอกได้ โดยไม่รบกวน hydration
@@ -70,7 +70,7 @@ export default function SurveyIndexPage() {
       </div>
 
       <main className="mx-auto max-w-5xl px-4 py-6 space-y-6">
-        {/* บัตรคิวอาร์ “ส่วนกลาง” */}
+        {/* บัตรคิวอาร์ "ส่วนกลาง" */}
         <section className="rounded-2xl border bg-white shadow-sm overflow-hidden">
           <div className="p-4 sm:p-5 border-b bg-gradient-to-r from-blue-50 to-white">
             <div className="font-semibold">คิวอาร์ส่วนกลาง</div>

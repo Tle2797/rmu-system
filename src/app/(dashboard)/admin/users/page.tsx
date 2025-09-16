@@ -49,14 +49,7 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
     <div className={`rounded-2xl border bg-white shadow-sm ${className}`}>{children}</div>
   );
 }
-function SectionTitle({ title, desc }: { title: string; desc?: string }) {
-  return (
-    <div>
-      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-      {desc && <p className="text-slate-600 text-sm mt-0.5">{desc}</p>}
-    </div>
-  );
-}
+
 function Modal({
   open,
   title,
@@ -71,7 +64,10 @@ function Modal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
       <div className="absolute inset-0 grid place-items-center p-4">
         <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border ring-1 ring-black/5">
           <div className="px-5 py-4 border-b flex items-center justify-between">
@@ -90,6 +86,7 @@ function Modal({
     </div>
   );
 }
+
 function Toast({ msg, type }: { msg: string; type: "ok" | "err" }) {
   return (
     <div
@@ -127,430 +124,330 @@ export default function AdminUsersPage() {
   const [rows, setRows] = useState<UserRow[]>([]);
   const [deps, setDeps] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // search
-  const [search, setSearch] = useState("");
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
-        r.username.toLowerCase().includes(q) ||
-        r.role_code.toLowerCase().includes(q) ||
-        (r.department_code || "").toLowerCase().includes(q) ||
-        (r.department_name || "").toLowerCase().includes(q)
-    );
-  }, [rows, search]);
-
-  // toast
+  const [query, setQuery] = useState("");
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
-  const showOk = (m: string) => {
-    setToast({ msg: m, type: "ok" });
-    setTimeout(() => setToast(null), 1500);
-  };
-  const showErr = (m: string) => {
-    setToast({ msg: m, type: "err" });
-    setTimeout(() => setToast(null), 2000);
-  };
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [editingRow, setEditingRow] = useState<UserRow | null>(null);
+  const [formUsername, setFormUsername] = useState("");
+  const [formRole, setFormRole] = useState<RoleCode>("staff");
+  const [formDeptId, setFormDeptId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // modals state
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState<null | UserRow>(null);
-  const [resetOpen, setResetOpen] = useState<null | UserRow>(null);
-
-  // create form
-  const [cUsername, setCUser] = useState("");
-  const [cPassword, setCPw] = useState("");
-  const [cRole, setCRole] = useState<RoleCode>("staff");
-  const [cDepId, setCDep] = useState<number | "">("");
-
-  // edit form
-  const [eRole, setERole] = useState<RoleCode>("staff");
-  const [eDepId, setEDep] = useState<number | "">("");
-
-  // reset form
-  const [newPw, setNewPw] = useState("");
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [u, d] = await Promise.all([
-        axios.get<UserRow[]>("/api/admin/users"),
-        axios.get<Department[]>("/api/admin/departments"),
-      ]);
-      setRows(u.data || []);
-      setDeps(d.data || []);
-    } catch {
-      showErr("ไม่สามารถดึงข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // โหลดข้อมูล
   useEffect(() => {
-    load();
+    let active = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const [usersRes, depsRes] = await Promise.all([
+          axios.get<UserRow[]>("/api/admin/users"),
+          axios.get<Department[]>("/api/departments"),
+        ]);
+        if (!active) return;
+        setRows(Array.isArray(usersRes.data) ? usersRes.data : []);
+        setDeps(Array.isArray(depsRes.data) ? depsRes.data : []);
+      } catch (e: any) {
+        if (!active) return;
+        setToast({ msg: e?.response?.data?.error || "โหลดข้อมูลไม่สำเร็จ", type: "err" });
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
   }, []);
 
-  const onCreate = async () => {
-    if (!cUsername || !cPassword) return showErr("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน");
+  // กรองข้อมูล
+  const filtered = useMemo(() => {
+    if (!query.trim()) return rows;
+    const q = query.toLowerCase();
+    return rows.filter(r => 
+      r.username.toLowerCase().includes(q) || 
+      r.department_name?.toLowerCase().includes(q) ||
+      roleLabelTH[r.role_code].toLowerCase().includes(q)
+    );
+  }, [rows, query]);
+
+  // ปิด modal
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingRow(null);
+    setFormUsername("");
+    setFormRole("staff");
+    setFormDeptId(null);
+  };
+
+  // เปิด modal เพิ่ม
+  const openAddModal = () => {
+    setModalTitle("เพิ่มผู้ใช้ใหม่");
+    setEditingRow(null);
+    setFormUsername("");
+    setFormRole("staff");
+    setFormDeptId(null);
+    setModalOpen(true);
+  };
+
+  // เปิด modal แก้ไข
+  const openEditModal = (row: UserRow) => {
+    setModalTitle("แก้ไขผู้ใช้");
+    setEditingRow(row);
+    setFormUsername(row.username);
+    setFormRole(row.role_code);
+    setFormDeptId(row.department_id);
+    setModalOpen(true);
+  };
+
+  // บันทึกข้อมูล
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formUsername.trim()) return;
+
     try {
-      await axios.post("/api/admin/users", {
-        username: cUsername,
-        password: cPassword,
-        role_code: cRole,
-        department_id: cDepId === "" ? null : cDepId,
-      });
-      setCreateOpen(false);
-      setCUser(""); setCPw(""); setCRole("staff"); setCDep("");
-      showOk("เพิ่มผู้ใช้สำเร็จ");
-      load();
+      setSubmitting(true);
+      if (editingRow) {
+        // แก้ไข
+        await axios.put(`/api/admin/users/${editingRow.id}`, {
+          username: formUsername.trim(),
+          role_code: formRole,
+          department_id: formDeptId,
+        });
+        setToast({ msg: "แก้ไขผู้ใช้สำเร็จ", type: "ok" });
+      } else {
+        // เพิ่มใหม่
+        await axios.post("/api/admin/users", {
+          username: formUsername.trim(),
+          role_code: formRole,
+          department_id: formDeptId,
+        });
+        setToast({ msg: "เพิ่มผู้ใช้สำเร็จ", type: "ok" });
+      }
+      
+      // รีเฟรชข้อมูล
+      const res = await axios.get<UserRow[]>("/api/admin/users");
+      setRows(Array.isArray(res.data) ? res.data : []);
+      closeModal();
     } catch (e: any) {
-      showErr(e?.response?.data?.error || "เพิ่มผู้ใช้ไม่สำเร็จ");
+      setToast({ msg: e?.response?.data?.error || "บันทึกข้อมูลไม่สำเร็จ", type: "err" });
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const onOpenEdit = (u: UserRow) => {
-    setERole(u.role_code);
-    setEDep(u.department_id ?? "");
-    setEditOpen(u);
-  };
-  const onEdit = async () => {
-    if (!editOpen) return;
+  // ลบข้อมูล
+  const handleDelete = async (row: UserRow) => {
+    if (!confirm(`ต้องการลบผู้ใช้ "${row.username}" หรือไม่?`)) return;
+
     try {
-      await axios.put(`/api/admin/users/${editOpen.id}`, {
-        role_code: eRole,
-        department_id: eDepId === "" ? null : eDepId,
-      });
-      setEditOpen(null);
-      showOk("บันทึกการแก้ไขเรียบร้อย");
-      load();
+      await axios.delete(`/api/admin/users/${row.id}`);
+      setToast({ msg: "ลบผู้ใช้สำเร็จ", type: "ok" });
+      
+      // รีเฟรชข้อมูล
+      const res = await axios.get<UserRow[]>("/api/admin/users");
+      setRows(Array.isArray(res.data) ? res.data : []);
     } catch (e: any) {
-      showErr(e?.response?.data?.error || "บันทึกการแก้ไขไม่สำเร็จ");
+      setToast({ msg: e?.response?.data?.error || "ลบข้อมูลไม่สำเร็จ", type: "err" });
     }
   };
 
-  const onResetPw = async () => {
-    if (!resetOpen || !newPw) return showErr("กรุณากำหนดรหัสผ่านใหม่");
+  // รีเซ็ตรหัสผ่าน
+  const resetPassword = async (row: UserRow) => {
+    if (!confirm(`ต้องการรีเซ็ตรหัสผ่านสำหรับ "${row.username}" หรือไม่?`)) return;
+
     try {
-      await axios.post(`/api/admin/users/${resetOpen.id}/reset-password`, { password: newPw });
-      setResetOpen(null);
-      setNewPw("");
-      showOk("รีเซ็ตรหัสผ่านสำเร็จ");
+      await axios.post(`/api/admin/users/${row.id}/reset-password`);
+      setToast({ msg: "รีเซ็ตรหัสผ่านสำเร็จ", type: "ok" });
     } catch (e: any) {
-      showErr(e?.response?.data?.error || "รีเซ็ตรหัสผ่านไม่สำเร็จ");
+      setToast({ msg: e?.response?.data?.error || "รีเซ็ตรหัสผ่านไม่สำเร็จ", type: "err" });
     }
   };
 
-  const onDelete = async (id: number) => {
-    if (!confirm("ยืนยันการลบผู้ใช้นี้หรือไม่?")) return;
-    try {
-      await axios.delete(`/api/admin/users/${id}`);
-      showOk("ลบผู้ใช้สำเร็จ");
-      load();
-    } catch (e: any) {
-      showErr(e?.response?.data?.error || "ลบผู้ใช้ไม่สำเร็จ");
+  // ปิด toast
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
     }
-  };
+  }, [toast]);
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <SectionTitle
-          title="จัดการผู้ใช้"
-          desc="เพิ่ม แก้ไข ลบ และรีเซ็ตรหัสผ่านผู้ใช้งานระบบ"
-        />
-        <div className="flex gap-2 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-72">
-            <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              className="w-full rounded-xl border pl-9 pr-3 py-2 text-sm ring-2 ring-transparent focus:outline-none focus:ring-sky-200"
-              placeholder="ค้นหา: ชื่อผู้ใช้ / บทบาท / หน่วยงาน"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="ค้นหาผู้ใช้"
-            />
-          </div>
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 text-sm shadow-sm"
-          >
-            <Plus className="h-4 w-4" />
-            เพิ่มผู้ใช้
-          </button>
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-900">จัดการผู้ใช้</h1>
+          <p className="text-slate-600 mt-1">เพิ่ม แก้ไข และลบข้อมูลผู้ใช้</p>
         </div>
-      </div>
 
-      {/* Quick stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-sky-50 text-sky-700 p-2 ring-1 ring-sky-200">
-              <Users className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">จำนวนผู้ใช้ทั้งหมด</div>
-              <div className="text-lg font-semibold">{rows.length}</div>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-amber-50 text-amber-700 p-2 ring-1 ring-amber-200">
-              <Shield className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">บทบาทที่ใช้งาน</div>
-              <div className="text-lg font-semibold">
-                {Array.from(new Set(rows.map(r => r.role_code))).length} บทบาท
+        <Card className="p-6">
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาผู้ใช้..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
             </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-emerald-50 text-emerald-700 p-2 ring-1 ring-emerald-200">
-              <Building2 className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">หน่วยงานที่ผูกผู้ใช้</div>
-              <div className="text-lg font-semibold">
-                {Array.from(new Set(rows.filter(r=>r.department_code).map(r=>r.department_code))).length} หน่วยงาน
-              </div>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b">
-              <tr>
-                <th className="p-3 text-left w-[60px]">ลำดับ</th>
-                <th className="p-3 text-left">ชื่อผู้ใช้</th>
-                <th className="p-3 text-left">บทบาท</th>
-                <th className="p-3 text-left">หน่วยงาน</th>
-                <th className="p-3 text-right w-[280px]"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <>
-                  <SkeletonRow />
-                  <SkeletonRow />
-                  <SkeletonRow />
-                </>
-              )}
-
-              {!loading && filtered.map((r, idx) => (
-                <tr key={r.id} className="border-b last:border-0 hover:bg-slate-50/50">
-                  <td className="p-3 text-slate-600">{idx + 1}</td>
-                  <td className="p-3">
-                    <div className="font-medium">{r.username}</div>
-                    <div className="text-xs text-slate-500">
-                      สร้างเมื่อ {new Date(r.created_at).toLocaleDateString("th-TH")}
-                    </div>
-                  </td>
-                  <td className="p-3"><RoleBadge role={r.role_code} /></td>
-                  <td className="p-3">
-                    {r.department_code ? (
-                      <span className="text-slate-800">
-                        <b className="font-semibold">{r.department_code}</b>{" "}
-                        <span className="text-slate-500">•</span>{" "}
-                        <span className="text-slate-700">{r.department_name}</span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 italic">ไม่ผูกกับหน่วยงาน</span>
-                    )}
-                  </td>
-                  <td className="p-3">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border hover:bg-slate-50"
-                        onClick={() => onOpenEdit(r)}
-                        aria-label={`แก้ไขผู้ใช้ ${r.username}`}
-                        title="แก้ไข"
-                      >
-                        <Pencil className="h-4 w-4" />
-                        แก้ไข
-                      </button>
-                      <button
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border hover:bg-slate-50"
-                        onClick={() => setResetOpen(r)}
-                        aria-label={`รีเซ็ตรหัสผ่านผู้ใช้ ${r.username}`}
-                        title="รีเซ็ตรหัสผ่าน"
-                      >
-                        <KeyRound className="h-4 w-4" />
-                        รีเซ็ตรหัสผ่าน
-                      </button>
-                      <button
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700"
-                        onClick={() => onDelete(r.id)}
-                        aria-label={`ลบผู้ใช้ ${r.username}`}
-                        title="ลบ"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        ลบ
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {!loading && !filtered.length && (
-                <tr>
-                  <td className="p-8" colSpan={5}>
-                    <div className="flex flex-col items-center justify-center text-center gap-2 text-slate-600">
-                      <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-                        <Users className="h-6 w-6 text-slate-400" />
-                      </div>
-                      <div className="font-medium">ไม่พบรายการผู้ใช้</div>
-                      <p className="text-sm text-slate-500">
-                        ลองปรับคำค้นหา หรือเพิ่มผู้ใช้ใหม่ด้วยปุ่ม “เพิ่มผู้ใช้”
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* Create Modal */}
-      <Modal open={createOpen} title="เพิ่มผู้ใช้ใหม่" onClose={() => setCreateOpen(false)}>
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3">
-            <label className="text-sm">
-              <span className="block mb-1 text-slate-700">ชื่อผู้ใช้ (Username)</span>
-              <input
-                className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                placeholder="เช่น supaporn.p"
-                value={cUsername}
-                onChange={(e)=>setCUser(e.target.value)}
-              />
-            </label>
-            <label className="text-sm">
-              <span className="block mb-1 text-slate-700">รหัสผ่านเริ่มต้น</span>
-              <input
-                className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                placeholder="กำหนดรหัสผ่าน"
-                type="password"
-                value={cPassword}
-                onChange={(e)=>setCPw(e.target.value)}
-              />
-            </label>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-sm">
-              <span className="block mb-1 text-slate-700">บทบาท</span>
-              <select
-                className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                value={cRole}
-                onChange={(e)=>setCRole(e.target.value as RoleCode)}
-              >
-                <option value="admin">{roleLabelTH.admin}</option>
-                <option value="exec">{roleLabelTH.exec}</option>
-                <option value="dept_head">{roleLabelTH.dept_head}</option>
-                <option value="staff">{roleLabelTH.staff}</option>
-              </select>
-            </label>
-
-            <label className="text-sm">
-              <span className="block mb-1 text-slate-700">ผูกกับหน่วยงาน (ถ้ามี)</span>
-              <select
-                className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                value={String(cDepId)}
-                onChange={(e)=>setCDep(e.target.value ? Number(e.target.value) : "")}
-              >
-                <option value="">(ไม่ผูกกับหน่วยงาน)</option>
-                {deps.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.code} — {d.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button className="px-4 py-2 rounded-lg border" onClick={()=>setCreateOpen(false)}>ยกเลิก</button>
-            <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700" onClick={onCreate}>
+            <button
+              onClick={openAddModal}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
               <UserPlus className="h-4 w-4" />
-              บันทึกผู้ใช้
+              เพิ่มผู้ใช้
             </button>
           </div>
-        </div>
-      </Modal>
 
-      {/* Edit Modal */}
-      <Modal open={!!editOpen} title={`แก้ไขผู้ใช้: ${editOpen?.username || ""}`} onClose={()=>setEditOpen(null)}>
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-sm">
-              <span className="block mb-1 text-slate-700">บทบาท</span>
-              <select
-                className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                value={eRole}
-                onChange={(e)=>setERole(e.target.value as RoleCode)}
-              >
-                <option value="admin">{roleLabelTH.admin}</option>
-                <option value="exec">{roleLabelTH.exec}</option>
-                <option value="dept_head">{roleLabelTH.dept_head}</option>
-                <option value="staff">{roleLabelTH.staff}</option>
-              </select>
-            </label>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b">
+                <tr>
+                  <th className="text-left p-3 font-medium text-slate-700">#</th>
+                  <th className="text-left p-3 font-medium text-slate-700">ชื่อผู้ใช้</th>
+                  <th className="text-left p-3 font-medium text-slate-700">บทบาท</th>
+                  <th className="text-left p-3 font-medium text-slate-700">หน่วยงาน</th>
+                  <th className="text-right p-3 font-medium text-slate-700">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <>
+                    <SkeletonRow />
+                    <SkeletonRow />
+                    <SkeletonRow />
+                  </>
+                )}
 
-            <label className="text-sm">
-              <span className="block mb-1 text-slate-700">หน่วยงานที่ผูก</span>
-              <select
-                className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                value={String(eDepId)}
-                onChange={(e)=>setEDep(e.target.value ? Number(e.target.value) : "")}
-              >
-                <option value="">(ไม่ผูกกับหน่วยงาน)</option>
-                {deps.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.code} — {d.name}
-                  </option>
+                {!loading && filtered.map((r, idx) => (
+                  <tr key={r.id} className="border-b last:border-0 hover:bg-slate-50/50">
+                    <td className="p-3 text-slate-500">{idx + 1}</td>
+                    <td className="p-3 font-medium text-slate-900">{r.username}</td>
+                    <td className="p-3">
+                      <RoleBadge role={r.role_code} />
+                    </td>
+                    <td className="p-3 text-slate-700">
+                      {r.department_name ? (
+                        <div className="flex items-center gap-1">
+                          <Building2 className="h-3 w-3 text-slate-400" />
+                          <span>{r.department_name}</span>
+                          <span className="text-slate-400">({r.department_code})</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">ไม่ระบุ</span>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => resetPassword(r)}
+                          className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          title="รีเซ็ตรหัสผ่าน"
+                        >
+                          <KeyRound className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(r)}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="แก้ไข"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(r)}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="ลบ"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 ))}
-              </select>
+
+                {!loading && filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-500">
+                      {query ? "ไม่พบผู้ใช้ที่ตรงกับคำค้นหา" : "ยังไม่มีข้อมูลผู้ใช้"}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+
+      {/* Modal */}
+      <Modal open={modalOpen} title={modalTitle} onClose={closeModal}>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              ชื่อผู้ใช้
             </label>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button className="px-4 py-2 rounded-lg border" onClick={()=>setEditOpen(null)}>ยกเลิก</button>
-            <button className="px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700" onClick={onEdit}>บันทึกการแก้ไข</button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Reset Password Modal */}
-      <Modal open={!!resetOpen} title={`รีเซ็ตรหัสผ่าน: ${resetOpen?.username || ""}`} onClose={()=>setResetOpen(null)}>
-        <div className="space-y-4">
-          <label className="text-sm">
-            <span className="block mb-1 text-slate-700">รหัสผ่านใหม่</span>
             <input
-              className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-amber-200"
-              placeholder="กำหนดรหัสผ่านใหม่"
-              type="password"
-              value={newPw}
-              onChange={(e)=>setNewPw(e.target.value)}
+              type="text"
+              value={formUsername}
+              onChange={(e) => setFormUsername(e.target.value)}
+              placeholder="เช่น john.doe"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
             />
-          </label>
-          <p className="text-xs text-slate-500">
-            คำแนะนำ: ใช้ตัวอักษรผสมตัวเลขอย่างน้อย 8 ตัวอักษรขึ้นไป
-          </p>
-          <div className="flex justify-end gap-2 pt-2">
-            <button className="px-4 py-2 rounded-lg border" onClick={()=>setResetOpen(null)}>ยกเลิก</button>
-            <button className="px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700" onClick={onResetPw}>ยืนยันการรีเซ็ต</button>
           </div>
-        </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              บทบาท
+            </label>
+            <select
+              value={formRole}
+              onChange={(e) => setFormRole(e.target.value as RoleCode)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="staff">เจ้าหน้าที่</option>
+              <option value="dept_head">หัวหน้าหน่วยงาน</option>
+              <option value="exec">ผู้บริหาร</option>
+              <option value="admin">ผู้ดูแลระบบ</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              หน่วยงาน
+            </label>
+            <select
+              value={formDeptId || ""}
+              onChange={(e) => setFormDeptId(e.target.value ? parseInt(e.target.value) : null)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">ไม่ระบุหน่วยงาน</option>
+              {deps.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.code})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {submitting ? "กำลังบันทึก..." : editingRow ? "แก้ไข" : "เพิ่ม"}
+            </button>
+          </div>
+        </form>
       </Modal>
 
-      {toast && <Toast {...toast} />}
+      {/* Toast */}
+      {toast && <Toast msg={toast.msg} type={toast.type} />}
     </div>
   );
 }
