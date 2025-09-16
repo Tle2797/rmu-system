@@ -1,0 +1,16 @@
+/* src/app/globals.css */
+
+/* โหลด Tailwind v4 */
+@import "tailwindcss";
+
+/* บอก Tailwind ให้สแกนไฟล์คอมโพเนนต์/เพจของเรา (สำคัญมาก) */
+/* ปรับเส้นทางตามโครงสร้างจริงของโปรเจกต์คุณ */
+@source "./**/*.{ts,tsx,js,jsx,mdx}";
+@source "../components/**/*.{ts,tsx,js,jsx}";
+@source "../app/**/*.{ts,tsx,js,jsx,mdx}";
+
+/* ตัวอย่าง reset/ตัวแปรเสริม (ใส่หรือไม่ใส่ก็ได้) */
+:root {
+  --font-geist-sans: var(--font-geist-sans);
+  --font-geist-mono: var(--font-geist-mono);
+}
