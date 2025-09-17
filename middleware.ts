@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyToken } from "@/server/auth/session";
 
-const PROTECTED_PREFIXES = ["/exec", "/dashboard", "/admin", "/register-department"];
+const PROTECTED_PREFIXES = ["/exec", "/dashboard", "/admin", "/register-department", "/qr"];
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;

@@ -73,33 +73,40 @@ export default function Sidebar({ username, role, departmentCode, items }: Props
   }, [role]);
 
   const computedItems: LocalItem[] = useMemo(() => {
-    if (items && items.length) return items as LocalItem[];
+    const baseQr: LocalItem = { label: "QR Code", href: "/qr", iconKey: "qr", match: "exact" };
+
+    if (items && items.length) {
+      const hasQr = items.some((i) => i.href === "/qr");
+      return hasQr ? (items as LocalItem[]) : ([...items, baseQr] as LocalItem[]);
+    }
+
     const deptRoot = `/dashboard/${departmentCode ?? ""}`;
+
     switch (role) {
       case "exec":
         return [
           { label: "ภาพรวมมหาวิทยาลัย", href: "/exec", iconKey: "layout", match: "exact" },
           { label: "จัดอันดับ/Heatmap", href: "/exec/rank", iconKey: "bar", match: "exact" },
-          { label: "QR Code", href: "/exec/qr-exec", iconKey: "qr", match: "exact" },
+          baseQr,
         ];
       case "dept_head":
         return [
           { label: "แดชบอร์ดหน่วยงาน", href: deptRoot, iconKey: "layout", match: "exact" },
           { label: "ความคิดเห็น", href: `${deptRoot}/comments`, iconKey: "clipboard", match: "prefix" },
-          { label: "คิวอาโค้ด", href: `${deptRoot}/qr-depart`, iconKey: "qr", match: "prefix" },
+          baseQr,
         ];
       case "admin":
         return [
           { label: "จัดการผู้ใช้", href: "/admin/users", iconKey: "users", match: "exact" },
           { label: "จัดการหน่วยงาน", href: "/admin/departments", iconKey: "building", match: "exact" },
           { label: "จัดการแบบสอบถาม", href: "/admin/questions", iconKey: "grid", match: "exact" },
-          { label: "คิวอาโค้ด", href: "/admin/qr-admin", iconKey: "qr", match: "exact" },
+          baseQr,
         ];
       default:
         return [
           { label: "แดชบอร์ดหน่วยงาน", href: deptRoot, iconKey: "layout", match: "exact" },
           { label: "ความคิดเห็น", href: `${deptRoot}/comments`, iconKey: "clipboard", match: "prefix" },
-          { label: "คิวอาโค้ด", href: `${deptRoot}/qr-depart`, iconKey: "qr", match: "prefix" },
+          baseQr,
         ];
     }
   }, [items, role, departmentCode]);
@@ -140,7 +147,7 @@ export default function Sidebar({ username, role, departmentCode, items }: Props
           "lg:sticky lg:top-0 lg:inset-auto lg:z-auto",
           "h-screen shrink-0",
           "bg-gradient-to-b from-sky-600 via-sky-700 to-blue-800",
-          "overflow-hidden", // ไม่ให้ aside เลื่อนเอง
+          "overflow-hidden",
           "relative border-r border-white/10",
           "transition-transform duration-200",
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
@@ -184,7 +191,6 @@ export default function Sidebar({ username, role, departmentCode, items }: Props
           <nav
             className={[
               "relative p-2 space-y-1 flex-1",
-              // ✅ ถ้าเป็นหน้า /survey ปิดการเลื่อนใน nav ไปเลย -> ไม่มีสกอร์บาร์ด้านใน
               isQRPage
                 ? "overflow-hidden"
                 : "overflow-y-auto overscroll-contain pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pb-28",
@@ -209,14 +215,8 @@ export default function Sidebar({ username, role, departmentCode, items }: Props
             })}
           </nav>
 
-          {/* Bottom Utilities (ตรึงก้น) */}
+          {/* Bottom Utilities */}
           <div className="absolute bottom-0 left-0 right-0 px-2 py-3 space-y-1 border-t border-white/15 bg-gradient-to-t from-blue-900/70 via-blue-900/40 to-transparent backdrop-blur">
-            <Link href="/docs" className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-sky-50/95 hover:bg-white/10 hover:text-white">
-              <FileText className="h-4 w-4" /> เอกสาร/วิธีใช้งาน
-            </Link>
-            <Link href="/settings" className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-sky-50/95 hover:bg-white/10 hover:text-white">
-              <Settings className="h-4 w-4" /> ตั้งค่า
-            </Link>
             <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm bg-rose-500 text-white hover:bg-rose-600">
               <LogOut className="h-4 w-4" /> ออกจากระบบ
             </button>
