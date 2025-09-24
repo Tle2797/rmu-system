@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { Search, Building2, ExternalLink } from "lucide-react";
 
 /** ประเภทข้อมูลหน่วยงาน */
 type DepartmentRow = {
@@ -18,16 +19,6 @@ export default function SurveyIndexPage() {
   const [rows, setRows] = useState<DepartmentRow[]>([]);
   const [q, setQ] = useState("");
 
-  // ---------- คิวอาร์ "ส่วนกลาง" ----------
-  // ใช้ลิงก์แบบ relative สำหรับ SSR/CSR ให้เหมือนกัน → กัน hydration mismatch
-  const CENTRAL_RELATIVE = "/survey";
-  // คำนวณลิงก์เต็มหลัง mount (client only) เพื่อให้คัดลอกได้ โดยไม่รบกวน hydration
-  const [centralAbs, setCentralAbs] = useState<string | null>(null);
-  useEffect(() => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    if (origin) setCentralAbs(origin.replace(/\/$/, "") + CENTRAL_RELATIVE);
-  }, []); // run once on client
-
   // ---------- โหลดรายชื่อหน่วยงาน ----------
   useEffect(() => {
     let active = true;
@@ -35,7 +26,7 @@ export default function SurveyIndexPage() {
       try {
         setLoading(true);
         setError("");
-        const res = await axios.get<DepartmentRow[]>("/api/departments"); // <- สมมติคุณมี endpoint รวมรายการ
+        const res = await axios.get<DepartmentRow[]>("/api/departments");
         if (!active) return;
         setRows(Array.isArray(res.data) ? res.data : []);
       } catch (e: any) {
@@ -52,132 +43,65 @@ export default function SurveyIndexPage() {
 
   // ---------- ค้นหา/กรอง ----------
   const filtered = useMemo(() => {
-    if (!q.trim()) return rows;
-    const s = q.toLowerCase();
+    const keyword = q.trim().toLowerCase();
+    if (!keyword) return rows;
     return rows.filter(
-      (r) =>
-        r.code.toLowerCase().includes(s) || r.name.toLowerCase().includes(s)
+      (r) => r.code.toLowerCase().includes(keyword) || r.name.toLowerCase().includes(keyword)
     );
   }, [rows, q]);
 
   return (
-    <div className="min-h-screen relative">
-      {/* พื้นหลังเบา ๆ */}
+    <div className="min-h-screen relative overflow-x-hidden">
+      {/* พื้นหลังฟ้าอ่อน */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-gradient-to-b from-sky-50 via-white to-slate-50" />
         <div className="absolute -top-24 -right-24 h-80 w-80 rounded-full bg-sky-200/30 blur-3xl" />
         <div className="absolute -bottom-28 -left-28 h-80 w-80 rounded-full bg-indigo-200/30 blur-3xl" />
       </div>
 
-      <main className="mx-auto max-w-5xl px-4 py-6 space-y-6">
-        {/* บัตรคิวอาร์ "ส่วนกลาง" */}
-        <section className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-          <div className="p-4 sm:p-5 border-b bg-gradient-to-r from-blue-50 to-white">
-            <div className="font-semibold">คิวอาร์ส่วนกลาง</div>
-            <p className="text-xs text-slate-600 mt-1">
-              ใช้สำหรับติดหน้าบอร์ดรวม —
-              ผู้ใช้สแกนแล้วจะเห็นรายชื่อหน่วยงานให้เลือกก่อน
-            </p>
-          </div>
+      {/* คอนเทนต์ปรับให้พอดีกับหน้าจอ */}
+      <main className="mx-auto w-full max-w-3xl px-3 sm:px-4 lg:px-6 py-6 sm:py-8 space-y-5 sm:space-y-6">
+        {/* Header */}
+        <header className="space-y-1 px-1">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+            เลือกหน่วยงานที่ต้องการประเมิน
+          </h1>
+          <p className="text-slate-600 text-sm sm:text-base">
+            ค้นหาด้วยรหัสหรือชื่อหน่วยงาน แล้วคลิกเพื่อไปยังแบบประเมินของหน่วยงานนั้น ๆ
+          </p>
+        </header>
 
-          <div className="p-4 sm:p-5 grid gap-5 sm:grid-cols-[220px_1fr] items-start">
-            {/* QR ส่วนกลาง (สร้างฝั่งเซิร์ฟเวอร์ให้ชี้ไปที่ /survey) */}
-            <img
-              src="/api/qrcode/central.png" // ✅ โหลดจาก API ที่เพิ่งเพิ่ม
-              alt="QR Central"
-              className="w-[220px] h-[220px] bg-white border rounded-xl p-3 shadow-sm object-contain"
-            />
-
-            <div className="space-y-3">
-              <div className="rounded-xl border bg-slate-50 p-3">
-                <div className="text-slate-700 text-sm">ลิงก์ส่วนกลาง</div>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  {/* ใช้ลิงก์แบบ relative เพื่อให้ SSR/CSR ตรงกัน */}
-                  <a
-                    href={CENTRAL_RELATIVE}
-                    target="_blank"
-                    className="text-blue-600 hover:underline break-all"
-                  >
-                    {CENTRAL_RELATIVE}
-                  </a>
-
-                  {/* ปุ่มคัดลอกลิงก์เต็ม แสดงเฉพาะหลัง mount (client only) */}
-                  {centralAbs && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(centralAbs);
-                        } catch {}
-                      }}
-                      className="rounded border px-2 py-1 text-xs hover:bg-white"
-                    >
-                      คัดลอกลิงก์เต็ม
-                    </button>
-                  )}
-                </div>
-
-                {/* โชว์ตัวอย่างลิงก์เต็มเฉพาะ client */}
-                {centralAbs && (
-                  <div className="mt-1 text-[12px] text-slate-500 break-all">
-                    ลิงก์เต็ม: <span>{centralAbs}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <a
-                  href="/api/qrcode/central.png" // ✅ ปุ่มดาวน์โหลด ใช้ API เดียวกัน
-                  download="central-qr.png"
-                  className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2"
-                >
-                  ดาวน์โหลด QR (PNG)
-                </a>
-                <a
-                  href={CENTRAL_RELATIVE}
-                  target="_blank"
-                  className="rounded-lg border px-4 py-2 hover:bg-white"
-                >
-                  เปิดหน้าเลือกหน่วยงาน
-                </a>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ค้นหา/เลือกหน่วยงาน */}
-        <section className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-          <div className="p-4 sm:p-5 border-b bg-gradient-to-r from-slate-50 to-white">
+        {/* กล่องค้นหา */}
+        <section className="rounded-2xl border border-sky-100 bg-white/80 backdrop-blur-sm shadow-sm">
+          <div className="p-4 border-b bg-sky-100/50 rounded-t-2xl">
             <div className="font-semibold">ค้นหาและเลือกหน่วยงาน</div>
           </div>
 
-          <div className="p-4 sm:p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
-              <form
-                className="flex gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                }}
-              >
-                <input
-                  className="w-[260px] rounded-lg border p-2 focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="ค้นหา (รหัส/ชื่อหน่วยงาน)"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                />
-                <button
-                  type="submit"
-                  className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm shadow-sm transition"
-                >
-                  ค้นหา
-                </button>
-              </form>
+          <div className="p-4 space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              {/* ช่องค้นหาเด่นชัด */}
+              <div className="w-full">
+                <label className="sr-only">ค้นหา</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="ค้นหาด้วยรหัสหรือชื่อหน่วยงาน"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  ทั้งหมด{" "}
+                  <span className="font-semibold text-slate-700">{filtered.length.toLocaleString()}</span>{" "}
+                  หน่วยงาน
+                </p>
+              </div>
             </div>
 
+            {/* สถานะโหลด/ผิดพลาด */}
             {loading && (
-              <div className="text-slate-500 text-sm">
-                กำลังโหลดรายชื่อหน่วยงาน…
-              </div>
+              <div className="text-slate-500 text-sm">กำลังโหลดรายชื่อหน่วยงาน…</div>
             )}
             {!loading && error && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 p-3 text-sm">
@@ -185,45 +109,77 @@ export default function SurveyIndexPage() {
               </div>
             )}
 
+            {/* รายชื่อหน่วยงาน: การ์ด (มือถือ) + ตาราง (เดสก์ท็อป) */}
             {!loading && !error && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b">
-                    <tr>
-                      <th className="text-left p-3 w-[120px]">รหัส</th>
-                      <th className="text-left p-3">ชื่อหน่วยงาน</th>
-                      <th className="text-left p-3 w-[220px]">
-                        ลิงก์แบบประเมิน
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((r) => (
-                      <tr key={r.code} className="border-b last:border-0">
-                        <td className="p-3 font-medium">{r.code}</td>
-                        <td className="p-3">{r.name}</td>
-                        <td className="p-3">
-                          <a
-                            className="text-blue-600 hover:underline"
-                            href={`/survey/${encodeURIComponent(r.code)}`}
-                            target="_blank"
-                          >
-                            /survey/{r.code}
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
+              <>
+                {/* Mobile: Cards */}
+                <div className="grid gap-3 sm:hidden">
+                  {filtered.map((r) => (
+                    <a
+                      key={r.code}
+                      href={`/survey/${encodeURIComponent(r.code)}`}
+                      className="group rounded-xl border bg-white p-4 shadow-sm hover:shadow-md transition"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="grid place-items-center h-10 w-10 rounded-lg bg-sky-100 text-sky-700 border border-sky-200">
+                          <Building2 className="h-5 w-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-slate-900 truncate">
+                            {r.name}
+                          </div>
+                          <div className="text-xs text-slate-500">{r.code}</div>
+                        </div>
+                        <ExternalLink className="h-4 w-4 text-slate-400 group-hover:text-blue-600" />
+                      </div>
+                    </a>
+                  ))}
+                  {!filtered.length && (
+                    <div className="rounded-xl border bg-white p-4 text-slate-500 text-sm">
+                      ไม่พบหน่วยงานที่ตรงกับคำค้นหา
+                    </div>
+                  )}
+                </div>
 
-                    {!filtered.length && (
+                {/* Desktop: Table — ยังคุมความกว้างด้วย max-w-3xl ด้านนอกแล้ว */}
+                <div className="hidden sm:block overflow-x-auto rounded-xl border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b">
                       <tr>
-                        <td colSpan={3} className="p-4 text-slate-500">
-                          ไม่พบหน่วยงานที่ตรงกับคำค้นหา
-                        </td>
+                        <th className="text-left p-3 w-[120px]">รหัส</th>
+                        <th className="text-left p-3">ชื่อหน่วยงาน</th>
+                        <th className="text-right p-3 w-[140px]">ไปแบบประเมิน</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {filtered.map((r) => (
+                        <tr key={r.code} className="border-b last:border-0 hover:bg-slate-50/50">
+                          <td className="p-3 font-medium text-slate-800">{r.code}</td>
+                          <td className="p-3 text-slate-800">{r.name}</td>
+                          <td className="p-3">
+                            <div className="flex justify-end">
+                              <a
+                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 hover:bg-slate-50"
+                                href={`/survey/${encodeURIComponent(r.code)}`}
+                                title="เปิดแบบประเมินหน่วยงานนี้"
+                              >
+                                เปิด <ExternalLink className="h-4 w-4" />
+                              </a>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {!filtered.length && (
+                        <tr>
+                          <td colSpan={3} className="p-5 text-center text-slate-500">
+                            ไม่พบหน่วยงานที่ตรงกับคำค้นหา
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </section>

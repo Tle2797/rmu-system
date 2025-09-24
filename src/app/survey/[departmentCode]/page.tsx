@@ -13,6 +13,12 @@ type Question = {
   type: "rating" | "text";
 };
 
+type SurveyMeta = {
+  id: number;
+  title: string;
+  description?: string | null;
+};
+
 type AnswerMap = Record<number, { rating?: number; comment?: string }>;
 
 /* ================ Helpers ================= */
@@ -42,6 +48,11 @@ export default function SurveyPage() {
   const [fetchError, setFetchError] = useState<string>("");
   const [departmentName, setDepartmentName] = useState("");
   const [submitted, setSubmitted] = useState(false);
+
+  // ✅ ดึงชื่อแบบประเมินจาก DB (title/description)
+  const [surveyMeta, setSurveyMeta] = useState<SurveyMeta | null>(null);
+  const surveyTitle = surveyMeta?.title?.trim() || "แบบประเมินความพึงพอใจ";
+  const surveyDesc = surveyMeta?.description?.trim() || "";
 
   /* ------------- Fetch -------------- */
   useEffect(() => {
@@ -87,8 +98,31 @@ export default function SurveyPage() {
       }
     };
 
+    const fetchSurveyMeta = async () => {
+      try {
+        // ✅ รองรับสองแบบ: ถ้าคุณทำ endpoint เป็น /api/surveys/:id/meta ก็เปลี่ยน URL บรรทัดนี้ได้
+        const res = await axios.get(`/api/surveys/${SURVEY_ID}`);
+        if (!mounted) return;
+        const data = res.data || {};
+        // คาดหวัง { id, title, description? }
+        if (data?.id) {
+          setSurveyMeta({
+            id: Number(data.id),
+            title: String(data.title || ""),
+            description: typeof data.description === "string" ? data.description : null,
+          });
+        } else {
+          setSurveyMeta(null);
+        }
+      } catch {
+        if (mounted) setSurveyMeta(null); // ใช้ค่า fallback
+      }
+    };
+
     fetchDept();
     fetchQuestions();
+    fetchSurveyMeta();
+
     return () => {
       mounted = false;
     };
@@ -197,7 +231,7 @@ export default function SurveyPage() {
         <div className="absolute -bottom-28 -left-28 h-80 w-80 rounded-full bg-indigo-200/30 blur-3xl" />
       </div>
 
-      {/* Header: กำหนด max-width ต่อ breakpoint */}
+      {/* Header */}
       <header className="sticky top-0 z-40 border-b border-sky-100/80 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div
           className="
@@ -205,12 +239,12 @@ export default function SurveyPage() {
             px-3 sm:px-4 md:px-5
             py-3 sm:py-4
             w-full
-            max-w-screen-sm   /* Small (มือถือทั่วไป) */
+            max-w-screen-sm
             sm:max-w-screen-sm
-            md:max-w-screen-md /* Medium (แท็บเล็ตแนวตั้ง) */
-            lg:max-w-screen-lg /* Large (แท็บเล็ตแนวนอน) */
-            xl:max-w-screen-xl /* Extra Large (Laptop) */
-            2xl:max-w-screen-2xl /* 2XL (จอใหญ่) */
+            md:max-w-screen-md
+            lg:max-w-screen-lg
+            xl:max-w-screen-xl
+            2xl:max-w-screen-2xl
             flex items-center justify-between gap-3
           "
         >
@@ -226,19 +260,25 @@ export default function SurveyPage() {
               />
             </div>
             <div className="min-w-0">
+              {/* ✅ ใช้ชื่อจาก DB; fallback ถ้าโหลดไม่ทัน/ไม่มี */}
               <h1 className="truncate font-extrabold tracking-tight text-[clamp(1.05rem,2.5vw,1.4rem)] text-slate-800">
-                แบบประเมินความพึงพอใจ
+                {surveyTitle}
               </h1>
-              <p className="truncate text-[12px] sm:text-sm text-slate-600">
-                หน่วยงาน:{" "}
-                <span className="font-semibold text-slate-800">
-                  {departmentName || departmentCode || "-"}
-                </span>
-              </p>
+              {/* ✅ description (optional) */}
+              {surveyDesc ? (
+                <p className="truncate text-[12px] sm:text-sm text-slate-600">{surveyDesc}</p>
+              ) : (
+                <p className="truncate text-[12px] sm:text-sm text-slate-600">
+                  หน่วยงาน:{" "}
+                  <span className="font-semibold text-slate-800">
+                    {departmentName || departmentCode || "-"}
+                  </span>
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Progress chip: โชว์ตั้งแต่ sm ขึ้นไป */}
+          {/* Progress chip */}
           <span
             className="hidden sm:inline-flex items-center gap-2 text-[11px] sm:text-xs rounded-full border border-sky-200 bg-sky-50 text-sky-700 px-3 py-1"
             aria-live="polite"
@@ -250,7 +290,7 @@ export default function SurveyPage() {
         <div className="h-px w-full bg-gradient-to-r from-sky-200 via-transparent to-sky-200" />
       </header>
 
-      {/* Main content: ใช้ max-width แบบเป็นขั้น */}
+      {/* Main content */}
       <main
         className="
           mx-auto
@@ -269,12 +309,7 @@ export default function SurveyPage() {
         <section className="mb-5 sm:mb-6">
           <div className="rounded-2xl border border-sky-100 bg-white/90 shadow-sm overflow-hidden ring-1 ring-white/50 backdrop-blur">
             <div className="p-3 sm:p-4 md:p-6">
-              <div
-                className="
-                  grid gap-4
-                  md:grid-cols-2
-                "
-              >
+              <div className="grid gap-4 md:grid-cols-2">
                 {/* User group */}
                 <div>
                   <label className="block text-[13px] sm:text-sm font-medium text-slate-800 mb-1">
@@ -401,7 +436,7 @@ export default function SurveyPage() {
         )}
       </main>
 
-      {/* Bottom Sheet: บีบเป็นคอลัมน์บนมือถือ, แถวบนแท็บเล็ต/เดสก์ท็อป */}
+      {/* Bottom Sheet */}
       <footer className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 bg-white/90 backdrop-blur">
         <div
           className="
@@ -574,7 +609,6 @@ function StarRating({
       <div
         ref={containerRef}
         className="
-          /* มือถือ: ปุ่มใหญ่/ระยะห่างมาก → กดง่าย */
           grid grid-cols-5 gap-2
           sm:flex sm:flex-wrap sm:gap-2.5
         "
@@ -599,7 +633,6 @@ function StarRating({
                 inline-flex items-center justify-center gap-2
                 focus:outline-none focus:ring-2 focus:ring-offset-2
                 text-sm
-                /* ขนาดปุ่มตาม breakpoint */
                 min-h-[44px] min-w-[3.25rem] px-2.5
                 sm:min-w-[3.5rem] sm:px-3
                 md:min-w-[3.75rem] md:px-3.5

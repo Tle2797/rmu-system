@@ -190,7 +190,7 @@ export default function DeptCommentsPage() {
         assignee: formAssignee.trim() || null,
         notes: formNotes.trim() || null,
       };
-      const res = await axios.post("/api/comments/actions", payload);
+      await axios.post("/api/comments/actions", payload);
       setDrawerOpen(false);
       setSelectedComment(null);
       await fetchActions();
@@ -220,6 +220,16 @@ export default function DeptCommentsPage() {
     setQInput("");
     setSentiment("");
   };
+
+  /** ---------- จัดลำดับภารกิจ: เปิดใหม่ > กำลังทำ > เสร็จสิ้น, จากนั้นตาม updated_at ใหม่ก่อน ---------- */
+  const sortedActions = useMemo(() => {
+    const order: Record<ActionRow["status"], number> = { open: 0, in_progress: 1, done: 2 };
+    return [...actions].sort((a, b) => {
+      const byStatus = order[a.status] - order[b.status];
+      if (byStatus !== 0) return byStatus;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+  }, [actions]);
 
   /** ---------- Table cell styles (ให้สม่ำเสมอ) ---------- */
   const TH = "px-4 py-2.5 text-left font-semibold text-slate-700";
@@ -264,8 +274,8 @@ export default function DeptCommentsPage() {
           <div className="md:ml-auto flex flex-col sm:flex-row gap-2 w-full md:w-auto">
             <div className="relative">
               <input
-                className="w-full sm:w-[280px] border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                placeholder="ค้นหาคำ/คำถาม/กลุ่ม…"
+                className="w-full sm:w-[320px] border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                placeholder="พิมพ์คำที่ต้องการค้นหา (คำถาม/กลุ่ม/ข้อความ)…"
                 value={qInput}
                 onChange={(e) => setQInput(e.target.value)}
               />
@@ -317,33 +327,36 @@ export default function DeptCommentsPage() {
 
         <div className="overflow-auto">
           <table
-            className="min-w-[1024px] w-full text-sm border-collapse table-fixed"
+            className="min-w-[1120px] w-full text-sm border-collapse table-fixed"
             style={{ wordBreak: "break-word" }}
           >
             <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b text-slate-700">
                 <th className={`${TH} w-32`}>วันที่</th>
                 <th className={`${TH} w-36`}>กลุ่ม</th>
-                <th className={`${TH} w-[28%]`}>คำถาม</th>
-                <th className={`${TH} w-50`}>อารมณ์</th>
-                <th className={`${TH} w-[60%]`}>ความคิดเห็น</th>
+                <th className={`${TH} w-[26%]`}>คำถาม</th>
+                <th className={`${TH} w-44`}>อารมณ์</th>
+                <th className={`${TH} w-44`}>ธีม</th>
+                <th className={`${TH} w-[50%]`}>ความคิดเห็น</th>
                 <th className={`${TH} w-40`}>ภารกิจ</th>
               </tr>
             </thead>
             <tbody className="leading-relaxed">
               {loading ? (
-                <TableLoading cols={6} TD={TD} />
+                <TableLoading cols={7} TD={TD} />
               ) : rows.length ? (
                 rows.map((r) => (
                   <tr key={r.answer_id} className="border-b hover:bg-slate-50/50">
                     <td className={`${TD} whitespace-nowrap`}>{toDDMMYYYY(r.created_at)}</td>
                     <td className={`${TD} whitespace-nowrap`}>{r.user_group}</td>
                     <td className={TD}>{r.question_text}</td>
-                    
                     <td className={`${TD} whitespace-nowrap`}>
                       <SentimentBadge s={r.sentiment} score={r.sentiment_score} />
                     </td>
-                    <td className={`${TD}`}>
+                    <td className={TD}>
+                      <ThemeChips themes={r.themes} />
+                    </td>
+                    <td className={TD}>
                       <ClampText text={r.comment} lines={4} />
                     </td>
                     <td className={TD}>
@@ -359,7 +372,7 @@ export default function DeptCommentsPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center text-slate-500">
+                  <td colSpan={7} className="p-6 text-center text-slate-500">
                     ไม่มีความคิดเห็นที่ตรงกับตัวกรอง
                   </td>
                 </tr>
@@ -390,7 +403,7 @@ export default function DeptCommentsPage() {
 
         <div className="overflow-auto">
           <table
-            className="min-w-[920px] w-full text-sm border-collapse table-fixed"
+            className="min-w-[980px] w-full text-sm border-collapse table-fixed"
             style={{ wordBreak: "break-word" }}
           >
             <thead className="sticky top-0 z-10 bg-white">
@@ -399,14 +412,14 @@ export default function DeptCommentsPage() {
                 <th className={`${TH} w-44`}>ผู้รับผิดชอบ</th>
                 <th className={`${TH} w-36`}>สถานะ</th>
                 <th className={`${TH} w-36`}>อัปเดตเมื่อ</th>
-                <th className={`${TH} w-60`}>เปลี่ยนสถานะ</th>
+                <th className={`${TH} w-48`}>เปลี่ยนสถานะ</th>
               </tr>
             </thead>
             <tbody className="leading-relaxed">
               {actionLoading ? (
                 <TableLoading cols={5} TD={TD} />
-              ) : actions.length ? (
-                actions.map((a) => (
+              ) : sortedActions.length ? (
+                sortedActions.map((a) => (
                   <tr key={a.id} className="border-b hover:bg-slate-50/50">
                     <td className={TD}>
                       <div className="font-medium">{a.title}</div>
@@ -423,11 +436,13 @@ export default function DeptCommentsPage() {
                     </td>
                     <td className={`${TD} whitespace-nowrap`}>{toDDMMYYYY(a.updated_at)}</td>
                     <td className={TD}>
-                      <div className="flex flex-wrap gap-1.5">
+                      {/* แนวตั้ง: เปิดใหม่ (บน) → กำลังทำ (กลาง) → เสร็จสิ้น (ล่าง) */}
+                      <div className="inline-flex flex-col items-stretch rounded-md border border-slate-200 overflow-hidden">
                         <SegBtn
                           active={a.status === "open"}
                           onClick={() => updateActionStatus(a.id, "open")}
                           label="เปิดใหม่"
+                          rounded="top"
                         />
                         <SegBtn
                           active={a.status === "in_progress"}
@@ -438,6 +453,7 @@ export default function DeptCommentsPage() {
                           active={a.status === "done"}
                           onClick={() => updateActionStatus(a.id, "done")}
                           label="เสร็จสิ้น"
+                          rounded="bottom"
                         />
                       </div>
                     </td>
@@ -468,7 +484,7 @@ export default function DeptCommentsPage() {
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">สร้างภารกิจ</div>
               <button
-                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50"
+                className="rounded-lg border bg-red-500  px-3 py-1.5 text-sm hover:bg-red-600 text-white"
                 onClick={() => setDrawerOpen(false)}
               >
                 ปิด
@@ -502,7 +518,7 @@ export default function DeptCommentsPage() {
                 <label className="text-sm font-medium">หัวข้อภารกิจ</label>
                 <input
                   className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  value={formTitle}
+                  // value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
                   placeholder="หัวข้อกระชับ ชี้ชัดสิ่งที่ต้องทำ"
                 />
@@ -514,7 +530,7 @@ export default function DeptCommentsPage() {
                   className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
                   value={formAssignee}
                   onChange={(e) => setFormAssignee(e.target.value)}
-                  placeholder="เช่น เจ้าหน้าที่ A / email@domain"
+                  placeholder="เช่น เจ้าหน้าที่ฝ่าย..."
                 />
               </div>
 
@@ -522,7 +538,7 @@ export default function DeptCommentsPage() {
                 <label className="text-sm font-medium">บันทึกเพิ่มเติม</label>
                 <textarea
                   className="w-full rounded-lg border px-3 py-2 text-sm min-h-[96px] focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  value={formNotes}
+                  // value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
                   placeholder="รายละเอียด/แนวทางการแก้ไข/กำหนดเวลา"
                 />
@@ -537,7 +553,7 @@ export default function DeptCommentsPage() {
                   {creating ? "กำลังบันทึก…" : "สร้างภารกิจ"}
                 </button>
                 <button
-                  className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50"
+                  className="rounded-lg border bg-red-500 px-4 py-2 text-sm hover:bg-red-600 text-white"
                   onClick={() => setDrawerOpen(false)}
                 >
                   ยกเลิก
@@ -653,18 +669,29 @@ function SegBtn({
   active,
   label,
   onClick,
+  rounded,
 }: {
   active?: boolean;
   label: string;
   onClick: () => void;
+  rounded?: "top" | "bottom";
 }) {
+  const radius =
+    rounded === "top"
+      ? "rounded-t-md"
+      : rounded === "bottom"
+      ? "rounded-b-md"
+      : "rounded-none";
   return (
     <button
       onClick={onClick}
-      className={`rounded-md border px-2.5 py-1 text-xs transition ${
-        active ? "bg-sky-600 text-white border-sky-700" : "hover:bg-slate-50"
+      className={`px-3 py-1.5 text-xs border-t first:border-t-0 ${
+        active
+          ? `bg-sky-600 text-white ${radius}`
+          : `bg-white hover:bg-slate-50 ${radius}`
       }`}
       aria-pressed={active}
+      style={{ borderColor: "rgb(226 232 240)" }} // slate-200
     >
       {label}
     </button>

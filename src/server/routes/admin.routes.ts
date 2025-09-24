@@ -9,7 +9,8 @@ import {
   // Departments + QR
   createDepartment,
   listDepartments,
-  regenerateQrForDepartment
+  regenerateQrForDepartment,
+  changeUserPassword
 } from "../controllers/admin.controller";
 
 export default (app: Elysia) =>
@@ -74,4 +75,18 @@ export default (app: Elysia) =>
       const result = await regenerateQrForDepartment(params.code);
       if ((result as any)?.error) set.status = 404;
       return result;
+    })
+    
+    .post("/admin/users/:id/change-password", async ({ params, body, set }) => {
+      const id = Number(params.id || 0);
+      const { new_password } = (body || {}) as { new_password?: string };
+
+      const r = await changeUserPassword({ userId: id, newPassword: new_password });
+
+      if ("error" in r) {
+        set.status = 400;
+        return r; // { error: "..." }
+      }
+
+      return r; // { ok: true }
     });

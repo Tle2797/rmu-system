@@ -3,7 +3,7 @@ import { db } from "../db.config";
 import QRCode from "qrcode";
 import fs from "fs";
 import path from "path";
-
+import { hashPassword } from "../auth/password";
 /* =========================
    ส่วน: Questions (CRUD)
    ========================= */
@@ -147,4 +147,29 @@ export async function regenerateQrForDepartment(codeParam: string) {
   );
 
   return { message: "อัปเดต QR สำเร็จ", qr_url: qrPublicPath, survey_url: surveyUrl };
+}
+
+export async function changeUserPassword(opts: { userId?: number; newPassword?: string }) {
+  const userId = Number(opts.userId || 0);
+  const newPassword = (opts.newPassword || "").trim();
+
+  if (!userId || Number.isNaN(userId)) {
+    return { error: "ระบุ user id ไม่ถูกต้อง" };
+  }
+  if (!newPassword || newPassword.length < 8) {
+    return { error: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" };
+  }
+
+  const hash = await hashPassword(newPassword);
+
+  const result = await db.result(
+    "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
+    [hash, userId]
+  );
+
+  if (result.rowCount === 0) {
+    return { error: "ไม่พบผู้ใช้ที่ต้องการเปลี่ยนรหัสผ่าน" };
+  }
+
+  return { ok: true };
 }

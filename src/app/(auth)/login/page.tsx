@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import { Eye, EyeOff, User, Lock } from "lucide-react";
 
 type Role = "admin" | "exec" | "dept_head" | "staff";
 
@@ -125,11 +126,13 @@ export default function LoginPage() {
 
           {/* Form */}
           <div className="px-6 py-8 sm:px-8 sm:py-10 space-y-6">
+            {/* Username */}
             <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">ชื่อผู้ใช้</label>
+              <label className="mb-2 ml-2 block text-sm font-semibold text-slate-700">ชื่อผู้ใช้</label>
               <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" aria-hidden />
                 <input
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 pr-12 text-sm sm:text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 pl-11 pr-4 py-3 text-sm sm:text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
                   placeholder="username"
                   value={username}
                   onChange={(e) => setU(e.target.value)}
@@ -140,11 +143,13 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Password */}
             <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">รหัสผ่าน</label>
+              <label className="mb-2 ml-2 block text-sm font-semibold text-slate-700">รหัสผ่าน</label>
               <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" aria-hidden />
                 <input
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 pr-12 text-sm sm:text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 pl-11 pr-11 py-3 text-sm sm:text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
                   type={showPw ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}
@@ -153,6 +158,15 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   aria-label="รหัสผ่าน"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPw((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition"
+                  aria-label={showPw ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                  title={showPw ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                >
+                  {showPw ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
               </div>
             </div>
 
