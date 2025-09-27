@@ -45,7 +45,7 @@ export default function RegisterDepartmentPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   // ✅ Pagination: ปรับเป็นหน้า ละ 3 หน่วยงาน
-  const PAGE_SIZE = 3;
+  const PAGE_SIZE = 5;
   const [page, setPage] = useState(1);
 
   // ✅ Modal Preview สำหรับดูรูป (QR) แบบใหญ่
