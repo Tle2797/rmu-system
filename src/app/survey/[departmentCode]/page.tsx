@@ -33,6 +33,13 @@ const SURVEY_ID = 1;
 
 /* ================ Page =================== */
 export default function SurveyPage() {
+  // ✅ ล็อก scroll ของ body ไว้หน้าเดียว
+  useEffect(() => {
+    const prev = document.body.style.overflowY;
+    document.body.style.overflowY = "hidden";
+    return () => { document.body.style.overflowY = prev; };
+  }, []);
+
   const params = useParams();
   const departmentCode =
     (Array.isArray((params as any)?.departmentCode)
@@ -100,11 +107,9 @@ export default function SurveyPage() {
 
     const fetchSurveyMeta = async () => {
       try {
-        // ✅ รองรับสองแบบ: ถ้าคุณทำ endpoint เป็น /api/surveys/:id/meta ก็เปลี่ยน URL บรรทัดนี้ได้
         const res = await axios.get(`/api/surveys/${SURVEY_ID}`);
         if (!mounted) return;
         const data = res.data || {};
-        // คาดหวัง { id, title, description? }
         if (data?.id) {
           setSurveyMeta({
             id: Number(data.id),
@@ -115,7 +120,7 @@ export default function SurveyPage() {
           setSurveyMeta(null);
         }
       } catch {
-        if (mounted) setSurveyMeta(null); // ใช้ค่า fallback
+        if (mounted) setSurveyMeta(null);
       }
     };
 
@@ -123,9 +128,7 @@ export default function SurveyPage() {
     fetchQuestions();
     fetchSurveyMeta();
 
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [departmentCode]);
 
   /* ------------- Computed -------------- */
@@ -223,7 +226,8 @@ export default function SurveyPage() {
 
   /* ------------- UI (Responsive-first) -------------- */
   return (
-    <div className="min-h-screen relative text-slate-900">
+    // ✅ คอนเทนเนอร์หลักตัวเดียวเป็น scroll container
+    <div className="h-dvh overflow-y-auto overflow-x-hidden overscroll-contain relative text-slate-900">
       {/* Background */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-gradient-to-b from-sky-50 via-white to-slate-50" />
@@ -235,17 +239,8 @@ export default function SurveyPage() {
       <header className="sticky top-0 z-40 border-b border-sky-100/80 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div
           className="
-            mx-auto
-            px-3 sm:px-4 md:px-5
-            py-3 sm:py-4
-            w-full
-            max-w-screen-sm
-            sm:max-w-screen-sm
-            md:max-w-screen-md
-            lg:max-w-screen-lg
-            xl:max-w-screen-xl
-            2xl:max-w-screen-2xl
-            flex items-center justify-between gap-3
+            mx-auto px-3 sm:px-4 md:px-5 py-3 sm:py-4 w-full
+            max-w-screen-xl flex items-center justify-between gap-3
           "
         >
           <div className="flex items-center gap-3 min-w-0">
@@ -260,11 +255,9 @@ export default function SurveyPage() {
               />
             </div>
             <div className="min-w-0">
-              {/* ✅ ใช้ชื่อจาก DB; fallback ถ้าโหลดไม่ทัน/ไม่มี */}
               <h1 className="truncate font-extrabold tracking-tight text-[clamp(1.05rem,2.5vw,1.4rem)] text-slate-800">
                 {surveyTitle}
               </h1>
-              {/* ✅ description (optional) */}
               {surveyDesc ? (
                 <p className="truncate text-[12px] sm:text-sm text-slate-600">{surveyDesc}</p>
               ) : (
@@ -293,16 +286,8 @@ export default function SurveyPage() {
       {/* Main content */}
       <main
         className="
-          mx-auto
-          px-3 sm:px-4 md:px-5
-          pb-28 pt-4 sm:pt-6
-          w-full
-          max-w-screen-sm
-          sm:max-w-screen-sm
-          md:max-w-screen-md
-          lg:max-w-screen-lg
-          xl:max-w-screen-xl
-          2xl:max-w-screen-2xl
+          mx-auto px-3 sm:px-4 md:px-5 pb-28 pt-4 sm:pt-6
+          w-full max-w-screen-xl
         "
       >
         {/* Group + progress card */}
@@ -320,8 +305,7 @@ export default function SurveyPage() {
                     className="
                       w-full rounded-xl border-slate-200
                       focus:border-sky-500 focus:ring-sky-500
-                      p-2.5
-                      text-[14px] sm:text-[15px]
+                      p-2.5 text-[14px] sm:text-[15px]
                       bg-white disabled:bg-slate-100
                     "
                     value={userGroup}
@@ -329,9 +313,7 @@ export default function SurveyPage() {
                   >
                     <option value="">-- เลือกกลุ่ม --</option>
                     {USER_GROUPS.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
+                      <option key={g} value={g}>{g}</option>
                     ))}
                   </select>
                   {!userGroup && !submitted && (
@@ -353,35 +335,13 @@ export default function SurveyPage() {
                     />
                   </div>
                   <div className="mt-1 text-[11px] sm:text-xs text-slate-500 flex items-center justify-between">
-                    <span>
-                      {answeredRatingCount}/{ratingQuestionsCount} ข้อ
-                    </span>
+                    <span>{answeredRatingCount}/{ratingQuestionsCount} ข้อ</span>
                     <span>{progressPct}%</span>
                   </div>
                 </div>
               </div>
-
-              {/* Quick actions */}
-              {!submitted && (
-                <div className="mt-4">
-                  <button
-                    type="button"
-                    onClick={resetAllAndStartOver}
-                    className="
-                      inline-flex items-center rounded-xl border
-                      px-3 py-2
-                      text-slate-700 hover:bg-slate-50 transition
-                      text-[13px] sm:text-sm
-                    "
-                    title="ล้างคำตอบทั้งหมด"
-                  >
-                    รีเซ็ตคำตอบ
-                  </button>
-                </div>
-              )}
             </div>
 
-            {/* Hint bar */}
             {!submitted && remainingRatings > 0 && (
               <div className="border-t border-amber-200 bg-amber-50 text-amber-700 text-[12px] sm:text-sm px-3 sm:px-4 md:px-6 py-2.5">
                 ยังเหลือข้อให้คะแนนอีก {remainingRatings} ข้อก่อนส่ง
@@ -406,19 +366,17 @@ export default function SurveyPage() {
         )}
 
         {/* Questions */}
-        {!loading &&
-          !fetchError &&
-          questions.map((q, idx) => (
-            <QuestionCard
-              key={q.id}
-              index={idx}
-              question={q}
-              value={answers[q.id]}
-              onRating={(val) => setRating(q.id, val)}
-              onComment={(val) => setComment(q.id, val)}
-              disabled={submitted}
-            />
-          ))}
+        {!loading && !fetchError && questions.map((q, idx) => (
+          <QuestionCard
+            key={q.id}
+            index={idx}
+            question={q}
+            value={answers[q.id]}
+            onRating={(val) => setRating(q.id, val)}
+            onComment={(val) => setComment(q.id, val)}
+            disabled={submitted}
+          />
+        ))}
 
         {/* Message */}
         {message && (
@@ -440,16 +398,8 @@ export default function SurveyPage() {
       <footer className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 bg-white/90 backdrop-blur">
         <div
           className="
-            mx-auto
-            px-3 sm:px-4 md:px-5
-            py-3 sm:py-3.5
-            w-full
-            max-w-screen-sm
-            sm:max-w-screen-sm
-            md:max-w-screen-md
-            lg:max-w-screen-lg
-            xl:max-w-screen-xl
-            2xl:max-w-screen-2xl
+            mx-auto px-3 sm:px-4 md:px-5 py-3 sm:py-3.5
+            w-full max-w-screen-xl
             flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-center sm:justify-between
           "
         >
@@ -492,10 +442,8 @@ export default function SurveyPage() {
               onClick={handleSubmit}
               disabled={!canSubmit}
               className={`
-                w-full sm:w-auto
-                inline-flex items-center justify-center
-                rounded-xl px-5 py-3
-                text-white shadow-sm transition
+                w-full sm:w-auto inline-flex items-center justify-center
+                rounded-xl px-5 py-3 text-white shadow-sm transition
                 focus:outline-none focus:ring-2 focus:ring-offset-2
                 text-[14px] sm:text-[15px]
                 ${canSubmit ? "bg-sky-600 hover:bg-sky-700 focus:ring-sky-500" : "bg-slate-300 cursor-not-allowed"}
@@ -530,8 +478,7 @@ function QuestionCard({
     <section
       className="
         rounded-2xl border border-sky-100 bg-white/95 shadow-sm
-        p-3 sm:p-4 md:p-6
-        mb-3 sm:mb-4 md:mb-5
+        p-3 sm:p-4 md:p-6 mb-3 sm:mb-4 md:mb-5
         ring-1 ring-white/50 backdrop-blur
         focus-within:ring-2 focus-within:ring-sky-200
       "
@@ -550,8 +497,7 @@ function QuestionCard({
             className="
               w-full rounded-xl border-slate-200
               focus:border-sky-500 focus:ring-sky-500
-              p-3
-              min-h-[110px] sm:min-h-[120px]
+              p-3 min-h-[110px] sm:min-h-[120px]
               text-[14px] sm:text-[15px]
               bg-white disabled:bg-slate-100
             "
@@ -571,7 +517,6 @@ function QuestionCard({
           <span>1 = ควรปรับปรุงมาก</span>
           <span className="h-1 w-px bg-slate-200" />
           <span>3 = ปานกลาง</span>
-          <span className="h-1 w-px bg-slate-200" />
           <span>5 = ดีเยี่ยม</span>
         </div>
       )}
@@ -608,10 +553,7 @@ function StarRating({
     <div className="mt-3">
       <div
         ref={containerRef}
-        className="
-          grid grid-cols-5 gap-2
-          sm:flex sm:flex-wrap sm:gap-2.5
-        "
+        className="grid grid-cols-5 gap-2 sm:flex sm:flex-wrap sm:gap-2.5"
         role="radiogroup"
         aria-label="ให้คะแนน 1-5 ดาว"
         tabIndex={disabled ? -1 : 0}
@@ -632,15 +574,12 @@ function StarRating({
                 rounded-2xl border transition select-none
                 inline-flex items-center justify-center gap-2
                 focus:outline-none focus:ring-2 focus:ring-offset-2
-                text-sm
-                min-h-[44px] min-w-[3.25rem] px-2.5
-                sm:min-w-[3.5rem] sm:px-3
-                md:min-w-[3.75rem] md:px-3.5
+                text-sm min-h-[44px] min-w-[3.25rem] px-2.5
+                sm:min-w-[3.5rem] sm:px-3 md:min-w-[3.75rem] md:px-3.5
                 lg:min-w-[4rem] lg:px-4
                 ${active
                   ? "bg-yellow-100 border-yellow-300 text-yellow-900 focus:ring-yellow-400"
-                  : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 focus:ring-slate-300"
-                }
+                  : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 focus:ring-slate-300"}
                 ${disabled ? "opacity-60 cursor-not-allowed" : ""}
               `}
             >

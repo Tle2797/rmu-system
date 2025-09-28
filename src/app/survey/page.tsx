@@ -8,17 +8,24 @@ type DepartmentRow = {
   id: number;
   code: string;
   name: string;
-  qr_code?: string | null; // ถ้ามีเก็บไว้ในตาราง (อาจไม่จำเป็นสำหรับหน้านี้)
+  qr_code?: string | null;
 };
 
 export default function SurveyIndexPage() {
+  // ---------- lock body scroll ----------
+  useEffect(() => {
+    const prev = document.body.style.overflowY;
+    document.body.style.overflowY = "hidden";
+    return () => { document.body.style.overflowY = prev; };
+  }, []);
+
   // ---------- state ----------
   const [departments, setDepartments] = useState<DepartmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
   const [q, setQ] = useState("");
-  const [centralLink, setCentralLink] = useState<string>("/survey"); // ป้องกัน hydration mismatch
-  const [centralQR, setCentralQR] = useState<string>("/api/qrcode/central.png"); // เส้นทาง API เดียว
+  const [centralLink, setCentralLink] = useState<string>("/survey");
+  const [centralQR, setCentralQR] = useState<string>("/api/qrcode/central.png");
 
   // ---------- load data ----------
   useEffect(() => {
@@ -38,13 +45,11 @@ export default function SurveyIndexPage() {
       }
     })();
 
-    // หลัง mount ค่อยอัปเดตลิงก์เป็น absolute เพื่อเลี่ยง hydration error
+    // หลัง mount ค่อยอัปเดตลิงก์ absolute
     try {
       const abs = `${window.location.origin}/survey`;
       setCentralLink(abs);
-    } catch {
-      // no-op
-    }
+    } catch {}
 
     return () => { active = false; };
   }, []);
@@ -54,15 +59,12 @@ export default function SurveyIndexPage() {
     if (!q.trim()) return departments;
     const s = q.toLowerCase();
     return departments.filter(
-      (d) =>
-        d.code.toLowerCase().includes(s) ||
-        d.name.toLowerCase().includes(s)
+      (d) => d.code.toLowerCase().includes(s) || d.name.toLowerCase().includes(s)
     );
   }, [departments, q]);
 
   // ---------- helpers ----------
   const download = (url: string, filename = "central-qr") => {
-    // ดาวน์โหลดภาพ QR ส่วนกลาง
     const a = document.createElement("a");
     a.href = url;
     a.download = `${filename}.png`;
@@ -70,7 +72,8 @@ export default function SurveyIndexPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky-50 via-white to-slate-50">
+    // ✅ ใช้คอนเทนเนอร์หลักตัวเดียวเป็น scroll container
+    <div className="h-dvh overflow-y-auto overflow-x-hidden overscroll-contain bg-gradient-to-b from-sky-50 via-white to-slate-50">
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b">
         <div className="mx-auto max-w-5xl px-4 py-4 flex items-center justify-between">
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">
@@ -81,7 +84,7 @@ export default function SurveyIndexPage() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-6 space-y-8">
-        {/* บล็อก: คิวอาร์ส่วนกลาง */}
+        {/* คิวอาร์ส่วนกลาง */}
         <section className="rounded-2xl border bg-white shadow-sm overflow-hidden">
           <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-sky-50 to-white">
             <div className="flex items-center justify-between gap-3">
@@ -98,9 +101,7 @@ export default function SurveyIndexPage() {
           </div>
 
           <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6 items-start">
-            {/* รูปคิวอาร์ */}
             <div className="flex items-center justify-center">
-              {/* ใช้ src จาก API ตรง ๆ → hydration-safe */}
               <img
                 src={centralQR}
                 alt="QR Code /survey"
@@ -108,22 +109,15 @@ export default function SurveyIndexPage() {
               />
             </div>
 
-            {/* ลิงก์ + ปุ่มดาวน์โหลด */}
             <div className="space-y-4">
               <div>
                 <div className="text-slate-700 text-sm">ลิงก์ส่วนกลาง</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <a
-                    href={centralLink}
-                    target="_blank"
-                    className="text-blue-600 hover:underline break-all"
-                  >
+                  <a href={centralLink} target="_blank" className="text-blue-600 hover:underline break-all">
                     {centralLink}
                   </a>
                   <button
-                    onClick={() => {
-                      navigator.clipboard?.writeText(centralLink);
-                    }}
+                    onClick={() => navigator.clipboard?.writeText(centralLink)}
                     className="rounded border px-2 py-1 text-xs hover:bg-white"
                   >
                     คัดลอก
@@ -138,11 +132,7 @@ export default function SurveyIndexPage() {
                 >
                   ดาวน์โหลดคิวอาร์ (PNG)
                 </button>
-                <a
-                  href={centralQR}
-                  target="_blank"
-                  className="rounded-lg border px-4 py-2 hover:bg-white"
-                >
+                <a href={centralQR} target="_blank" className="rounded-lg border px-4 py-2 hover:bg-white">
                   เปิดรูปเต็ม
                 </a>
               </div>
@@ -150,7 +140,7 @@ export default function SurveyIndexPage() {
           </div>
         </section>
 
-        {/* บล็อก: ค้นหาและเลือกหน่วยงาน */}
+        {/* ค้นหาและเลือกหน่วยงาน */}
         <section className="rounded-2xl border bg-white shadow-sm overflow-hidden">
           <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-slate-50 to-white">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -160,10 +150,7 @@ export default function SurveyIndexPage() {
                   พิมพ์ชื่อหรือรหัสหน่วยงาน แล้วคลิกเพื่อไปทำแบบประเมินของหน่วยงานนั้น
                 </p>
               </div>
-              <form
-                onSubmit={(e) => e.preventDefault()}
-                className="flex gap-2"
-              >
+              <form onSubmit={(e) => e.preventDefault()} className="flex gap-2">
                 <input
                   className="w-[240px] rounded-lg border focus:border-blue-500 focus:ring-blue-500 p-2"
                   placeholder="ค้นหา (รหัส/ชื่อ)"
@@ -181,14 +168,8 @@ export default function SurveyIndexPage() {
           </div>
 
           <div className="divide-y">
-            {loading && (
-              <div className="p-6 text-slate-500">กำลังโหลดข้อมูล…</div>
-            )}
-
-            {!loading && err && (
-              <div className="p-6 text-rose-700 bg-rose-50">❌ {err}</div>
-            )}
-
+            {loading && <div className="p-6 text-slate-500">กำลังโหลดข้อมูล…</div>}
+            {!loading && err && <div className="p-6 text-rose-700 bg-rose-50">❌ {err}</div>}
             {!loading && !err && filtered.length === 0 && (
               <div className="p-6 text-slate-500">ไม่พบหน่วยงาน</div>
             )}
