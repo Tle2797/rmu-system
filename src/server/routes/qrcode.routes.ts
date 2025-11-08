@@ -1,4 +1,4 @@
-// server/routes/qrcode.routes.ts
+// src/server/routes/qrcode.routes.ts
 import type { Elysia } from "elysia";
 import { genCentralQR } from "../controllers/qrcode.controller";
 

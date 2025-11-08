@@ -1,4 +1,4 @@
-// server/controllers/dashboard.controller.ts
+// src/server/controllers/dashboard.controller.ts
 import { db } from "../db.config";
 import ExcelJS from "exceljs";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";

@@ -1,11 +1,35 @@
-// app/(dashboard)/dashboard/[departmentCode]/comments/page.tsx
+// src/app/(dashboard)/dashboard/[departmentCode]/comments/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
-import axios from "axios";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
+import {
+  MessageSquare,
+  AlertTriangle,
+  Smile,
+  Frown,
+  Meh,
+  Plus,
+  ClipboardList,
+  CheckCircle2,
+  Loader2,
+  UserCircle,
+} from "lucide-react";
 
-/** ---------- Types from API ---------- */
+/* ========== Types ========== */
+
+type Role = "admin" | "exec" | "dept_head" | "staff";
+
+type MePayload = {
+  uid: number;
+  username: string;
+  role: Role;
+  departmentCode?: string;
+};
+
+type Sentiment = "positive" | "neutral" | "negative";
+
 type CommentRow = {
   answer_id: number;
   department_code: string;
@@ -14,15 +38,17 @@ type CommentRow = {
   created_at: string;
   question_text: string;
   comment: string;
-  sentiment: "positive" | "neutral" | "negative" | null;
+  sentiment: Sentiment;
   sentiment_score: number | null;
-  themes: string[] | null;
+  themes: string[];
 };
 
 type Summary = {
-  bySent: { sentiment: string | null; cnt: number }[];
+  bySent: { sentiment: Sentiment; cnt: number }[];
   byTheme: { theme: string; cnt: number }[];
 };
+
+type ActionStatus = "open" | "in_progress" | "done";
 
 type ActionRow = {
   id: number;
@@ -31,731 +57,632 @@ type ActionRow = {
   department_code: string;
   department_name: string;
   title: string;
-  status: "open" | "in_progress" | "done";
+  status: ActionStatus;
   assignee: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
 };
 
-type DepartmentInfo = { id: number; code: string; name: string };
+type DepartmentMeta = {
+  id: number;
+  code: string;
+  name: string;
+};
 
-/** ---------- Utils ---------- */
-// แสดงเป็น วัน/เดือน/ปี (ค.ศ.) ไม่รวมเวลา
-const toDDMMYYYY = (d: string | number | Date) =>
-  new Date(d).toLocaleDateString("th-TH-u-ca-gregory", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+/* ========== Helpers ========== */
 
-/** ---------- Page ---------- */
-export default function DeptCommentsPage() {
+const sentimentLabel: Record<Sentiment, string> = {
+  positive: "เชิงบวก",
+  neutral: "กลาง ๆ",
+  negative: "เชิงลบ",
+};
+
+const sentimentIcon: Record<Sentiment, ReactNode> = {
+  positive: <Smile className="size-3.5 text-emerald-600" />,
+  neutral: <Meh className="size-3.5 text-slate-500" />,
+  negative: <Frown className="size-3.5 text-rose-500" />,
+};
+
+const statusLabel: Record<ActionStatus, string> = {
+  open: "เปิด",
+  in_progress: "กำลังดำเนินการ",
+  done: "เสร็จสิ้น",
+};
+
+const statusColorClass: Record<ActionStatus, string> = {
+  open: "bg-amber-50 text-amber-700 ring-amber-200",
+  in_progress: "bg-sky-50 text-sky-700 ring-sky-200",
+  done: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+};
+
+function buildQuery(params: Record<string, string | undefined>) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== "") sp.set(k, v);
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+function formatStable(dt: string) {
+  // "2025-01-03T10:22:33.123Z" -> "2025-01-03 10:22"
+  return dt.replace("T", " ").slice(0, 16);
+}
+
+/* ========== Page Component ========== */
+
+export default function DepartmentCommentsPage() {
   const { departmentCode } = useParams<{ departmentCode: string }>();
+  const qs = useSearchParams();
+  const surveyId = Number(qs.get("survey_id") ?? 1);
 
-  // ฟิลเตอร์
-  const [qInput, setQInput] = useState("");
-  const [q, setQ] = useState("");
-  const [sentiment, setSentiment] = useState<string>("");
+  // auth & meta
+  const [me, setMe] = useState<MePayload | null>(null);
+  const role = me?.role;
+  const [dept, setDept] = useState<DepartmentMeta | null>(null);
 
-  // ข้อมูลหลัก
-  const [dept, setDept] = useState<DepartmentInfo | null>(null);
-  const [rows, setRows] = useState<CommentRow[]>([]);
-  const [sum, setSum] = useState<Summary | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // ภารกิจ (actions)
+  // data
+  const [comments, setComments] = useState<CommentRow[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [actions, setActions] = useState<ActionRow[]>([]);
-  const [actionLoading, setActionLoading] = useState(true);
-  const [actionStatusFilter, setActionStatusFilter] = useState<string>("");
 
-  // Drawer/Modal “สร้างภารกิจ”
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedComment, setSelectedComment] = useState<CommentRow | null>(null);
-  const [formTitle, setFormTitle] = useState("");
-  const [formAssignee, setFormAssignee] = useState("");
-  const [formNotes, setFormNotes] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
 
-  /** โหลด department_id จาก departmentCode */
+  // filters
+  const [q, setQ] = useState("");
+  const [sentiment, setSentiment] = useState<Sentiment | "">("");
+
+  // create action (เฉพาะ dept_head)
+  const [draftAnswerId, setDraftAnswerId] = useState<number | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftAssignee, setDraftAssignee] = useState("");
+  const [draftNotes, setDraftNotes] = useState("");
+  const [savingAction, setSavingAction] = useState(false);
+
+  /* ----- โหลดข้อมูลผู้ใช้ (role) ----- */
   useEffect(() => {
-    let ok = true;
+    let cancelled = false;
     (async () => {
       try {
-        const r = await axios.get(`/api/departments/${departmentCode}`);
-        if (!ok) return;
-        if ((r.data as any)?.error) setDept(null);
-        else setDept(r.data as DepartmentInfo);
+        const r = await fetch("/api/auth/me");
+        if (!r.ok) return;
+        const j = (await r.json()) as MePayload;
+        if (!cancelled) setMe(j);
       } catch {
-        if (ok) setDept(null);
+        // ปล่อยผ่าน
       }
     })();
     return () => {
-      ok = false;
+      cancelled = true;
     };
-  }, [departmentCode]);
+  }, []);
 
-  /** debounce ค้นหา */
+  /* ----- โหลด meta หน่วยงาน + comments + summary + actions ----- */
   useEffect(() => {
-    const t = setTimeout(() => setQ(qInput.trim()), 350);
-    return () => clearTimeout(t);
-  }, [qInput]);
-
-  /** โหลดคอมเมนต์ + summary */
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      setLoading(true);
+    let cancelled = false;
+    async function load() {
       try {
-        const params: any = { department_code: departmentCode };
-        if (q) params.q = q;
-        if (sentiment) params.sentiment = sentiment;
+        setLoading(true);
+        setError("");
 
-        const [s1, s2] = await Promise.all([
-          axios.get("/api/comments/search", { params }),
-          axios.get("/api/comments/summary", { params }),
+        const commonQuery = buildQuery({
+          survey_id: String(surveyId),
+          department_code: departmentCode,
+          q: q || undefined,
+          sentiment: sentiment || undefined,
+        });
+
+        const [depRes, cmtRes, sumRes, actRes] = await Promise.all([
+          fetch(`/api/departments/${departmentCode}`),
+          fetch(`/api/comments/search${commonQuery}`),
+          fetch(`/api/comments/summary${commonQuery}`),
+          fetch(
+            `/api/comments/actions${buildQuery({
+              department_code: departmentCode,
+            })}`
+          ),
         ]);
 
-        if (!mounted) return;
-        setRows(Array.isArray(s1.data) ? s1.data : []);
-        setSum(s2.data || null);
+        const depJson = await depRes.json();
+        const cmtJson = (await cmtRes.json()) as CommentRow[];
+        const sumJson = (await sumRes.json()) as Summary;
+        const actJson = (await actRes.json()) as ActionRow[];
+
+        if (cancelled) return;
+
+        if (!depRes.ok || (depJson as any)?.error) {
+          setError((depJson as any)?.error || "ไม่พบหน่วยงานนี้");
+          setDept(null);
+        } else {
+          setDept(depJson as DepartmentMeta);
+        }
+
+        if (!cmtRes.ok && (cmtJson as any)?.error) {
+          setError((cmtJson as any)?.error || "โหลดความคิดเห็นไม่สำเร็จ");
+        } else {
+          setComments(Array.isArray(cmtJson) ? cmtJson : []);
+        }
+
+        if (!sumRes.ok && (sumJson as any)?.error) {
+          // ไม่ถึงกับเป็น fatal error
+          setSummary(null);
+        } else {
+          setSummary(sumJson);
+        }
+
+        if (!actRes.ok && (actJson as any)?.error) {
+          // ปล่อย actions ว่างไป
+          setActions([]);
+        } else {
+          setActions(Array.isArray(actJson) ? actJson : []);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "เกิดข้อผิดพลาด");
       } finally {
-        if (mounted) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [departmentCode, q, sentiment]);
-
-  /** โหลดภารกิจของหน่วยงาน */
-  const fetchActions = async () => {
-    setActionLoading(true);
-    try {
-      const params: any = { department_code: departmentCode };
-      if (actionStatusFilter) params.status = actionStatusFilter;
-      const r = await axios.get<ActionRow[]>("/api/comments/actions", { params });
-      setActions(Array.isArray(r.data) ? r.data : []);
-    } finally {
-      setActionLoading(false);
     }
-  };
 
-  useEffect(() => {
-    fetchActions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentCode, actionStatusFilter]);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [departmentCode, surveyId, q, sentiment]);
 
-  /** สรุปอารมณ์ */
-  const sentMap = useMemo(() => {
-    const m: Record<"positive" | "neutral" | "negative", number> = {
+  const deptName = dept?.name ?? "-";
+
+  const bySentMap = useMemo(() => {
+    const m: Record<Sentiment, number> = {
       positive: 0,
       neutral: 0,
       negative: 0,
     };
-    sum?.bySent.forEach((x) => {
-      const k = (x.sentiment ?? "neutral") as "positive" | "neutral" | "negative";
-      m[k] = x.cnt;
-    });
+    if (!summary) return m;
+    for (const s of summary.bySent) {
+      m[s.sentiment] = s.cnt;
+    }
     return m;
-  }, [sum]);
+  }, [summary]);
 
-  /** Drawer */
-  const openDrawer = (row: CommentRow) => {
-    setSelectedComment(row);
-    setFormTitle(`[${row.user_group}] ${row.question_text}`);
-    setFormAssignee("");
-    setFormNotes(row.comment || "");
-    setDrawerOpen(true);
+  /* ========== Handlers ========== */
+
+  const canCreateAction = role === "dept_head" || role === "admin";
+  const canUpdateStatus = role === "staff" || role === "admin";
+
+  const handleOpenCreateAction = (c: CommentRow) => {
+    if (!canCreateAction || !dept) return;
+    setDraftAnswerId(c.answer_id);
+    setDraftTitle(
+      c.comment.length > 40
+        ? c.comment.slice(0, 40) + "..."
+        : c.comment || `ติดตามข้อร้องเรียนจากความคิดเห็น`
+    );
+    setDraftAssignee("");
+    setDraftNotes(c.comment);
   };
 
-  const submitCreate = async () => {
-    if (!selectedComment) return;
+  const handleCancelDraft = () => {
+    setDraftAnswerId(null);
+    setDraftTitle("");
+    setDraftAssignee("");
+    setDraftNotes("");
+  };
 
-    if (!dept) {
-      alert("ยังไม่พบ department_id ของหน่วยงานนี้ (รอโหลด/ตรวจ API /api/departments/[code])");
-      return;
-    }
-    if (!formTitle.trim()) {
-      alert("กรุณากรอกหัวข้อภารกิจ");
-      return;
-    }
-
-    setCreating(true);
+  const handleSubmitAction = async () => {
+    if (!canCreateAction || !dept || !draftAnswerId || !draftTitle.trim()) return;
     try {
-      const payload = {
-        answer_id: selectedComment.answer_id,
-        department_id: dept.id,
-        title: formTitle.trim(),
-        assignee: formAssignee.trim() || null,
-        notes: formNotes.trim() || null,
-      };
-      await axios.post("/api/comments/actions", payload);
-      setDrawerOpen(false);
-      setSelectedComment(null);
-      await fetchActions();
-      alert("สร้างภารกิจสำเร็จ");
+      setSavingAction(true);
+      const res = await fetch("/api/comments/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          answer_id: draftAnswerId,
+          department_id: dept.id,
+          title: draftTitle.trim(),
+          assignee: draftAssignee.trim() || null,
+          notes: draftNotes.trim() || null,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || (j as any)?.error) {
+        alert((j as any)?.error || "สร้างภารกิจไม่สำเร็จ");
+        return;
+      }
+      // reload actions list
+      const actRes = await fetch(
+        `/api/comments/actions${buildQuery({ department_code: departmentCode })}`
+      );
+      const actJson = (await actRes.json()) as ActionRow[];
+      setActions(Array.isArray(actJson) ? actJson : []);
+
+      handleCancelDraft();
     } catch (e: any) {
-      const msg =
-        e?.response?.status === 404
-          ? "ไม่พบ API POST /api/comments/actions (ฝั่งเซิร์ฟเวอร์ยังไม่ได้ทำ?)"
-          : e?.response?.data?.error || "สร้างภารกิจล้มเหลว";
-      alert(msg);
+      alert(e?.message || "เกิดข้อผิดพลาดในการสร้างภารกิจ");
     } finally {
-      setCreating(false);
+      setSavingAction(false);
     }
   };
 
-  /** เปลี่ยนสถานะภารกิจ */
-  const updateActionStatus = async (id: number, status: ActionRow["status"]) => {
+  const handleChangeStatus = async (id: number, status: ActionStatus) => {
+    if (!canUpdateStatus) return;
     try {
-      await axios.put("/api/comments/actions", { id, status });
-      await fetchActions();
+      const res = await fetch("/api/comments/actions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      const j = await res.json();
+      if (!res.ok || (j as any)?.error) {
+        alert((j as any)?.error || "อัปเดตสถานะไม่สำเร็จ");
+        return;
+      }
+      // update local
+      setActions((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status } : a))
+      );
     } catch (e: any) {
-      alert(e?.response?.data?.error || "อัปเดตสถานะล้มเหลว");
+      alert(e?.message || "เกิดข้อผิดพลาดในการอัปเดตสถานะ");
     }
   };
 
-  const clearFilters = () => {
-    setQInput("");
-    setSentiment("");
-  };
-
-  /** ---------- จัดลำดับภารกิจ: เปิดใหม่ > กำลังทำ > เสร็จสิ้น, จากนั้นตาม updated_at ใหม่ก่อน ---------- */
-  const sortedActions = useMemo(() => {
-    const order: Record<ActionRow["status"], number> = { open: 0, in_progress: 1, done: 2 };
-    return [...actions].sort((a, b) => {
-      const byStatus = order[a.status] - order[b.status];
-      if (byStatus !== 0) return byStatus;
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
-  }, [actions]);
-
-  /** ---------- Table cell styles (ให้สม่ำเสมอ) ---------- */
-  const TH = "px-4 py-2.5 text-left font-semibold text-slate-700";
-  const TD = "px-4 py-2.5 align-middle text-slate-800";
+  /* ========== Render ========== */
 
   return (
-    <div className="mx-auto max-w-7xl p-4 space-y-6">
+    <div className="p-4 md:p-6 space-y-5">
       {/* Header */}
-      <header className="flex items-center justify-between">
-        <div className="space-y-0.5">
-          <h1 className="text-2xl font-bold tracking-tight">ความคิดเห็น &amp; ภารกิจ</h1>
-          <div className="text-slate-600 text-sm">
-            หน่วยงาน:{" "}
-            <span className="inline-flex items-center gap-2">
-              <span className="font-semibold">{dept?.name || "-"}</span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-200">
-                {departmentCode}
-              </span>
-            </span>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-2xl border bg-white shadow-sm p-4 md:p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+      >
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs text-sky-700 ring-1 ring-sky-200">
+            <MessageSquare className="size-3.5" /> ความคิดเห็นและการแก้ไขปัญหา
           </div>
+          <h1 className="mt-2 text-xl md:text-2xl font-semibold tracking-tight">
+            หน่วยงาน: <span className="text-sky-700">{deptName}</span>
+          </h1>
+          {me && (
+            <p className="mt-1 text-xs text-slate-500 flex items-center gap-1.5">
+              <UserCircle className="size-3.5" />
+              ผู้ใช้งาน:{" "}
+              <span className="font-medium text-slate-700">{me.username}</span>{" "}
+              ({role})
+            </p>
+          )}
         </div>
 
-        {/* KPI ย่อ */}
-        <div className="hidden md:flex items-center gap-2">
-          <MiniKPI label="บวก" tone="green" value={sentMap.positive ?? 0} />
-          <MiniKPI label="กลาง" tone="slate" value={sentMap.neutral ?? 0} />
-          <MiniKPI label="ลบ" tone="rose" value={sentMap.negative ?? 0} />
-        </div>
-      </header>
-
-      {/* Summary Cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <CardStat title="เชิงบวก" value={sentMap.positive ?? 0} tone="green" />
-        <CardStat title="กลาง ๆ" value={sentMap.neutral ?? 0} tone="slate" />
-        <CardStat title="เชิงลบ" value={sentMap.negative ?? 0} tone="rose" />
-      </section>
-
-      {/* Toolbar */}
-      <section className="rounded-xl border bg-white/70 backdrop-blur-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center px-3 py-3">
-          <div className="font-medium">ตัวกรองความคิดเห็น</div>
-          <div className="md:ml-auto flex flex-col sm:flex-row gap-2 w-full md:w-auto">
-            <div className="relative">
-              <input
-                className="w-full sm:w-[320px] border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                placeholder="พิมพ์คำที่ต้องการค้นหา (คำถาม/กลุ่ม/ข้อความ)…"
-                value={qInput}
-                onChange={(e) => setQInput(e.target.value)}
-              />
-              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔎</span>
-            </div>
-            <select
-              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-              value={sentiment}
-              onChange={(e) => setSentiment(e.target.value)}
-              title="กรองอารมณ์"
-            >
-              <option value="">ทุกอารมณ์</option>
-              <option value="positive">เชิงบวก</option>
-              <option value="neutral">กลาง ๆ</option>
-              <option value="negative">เชิงลบ</option>
-            </select>
-            {(q || sentiment) && (
-              <button
-                className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
-                onClick={clearFilters}
-                title="ล้างตัวกรอง"
-              >
-                ล้างตัวกรอง
-              </button>
+        {/* Filters */}
+        <div className="flex flex-col gap-2 md:items-end">
+          <div className="flex gap-2">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="ค้นหาคีย์เวิร์ดในความคิดเห็น/คำถาม"
+              className="w-[220px] md:w-[260px] rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5 justify-end">
+            {(["", "positive", "neutral", "negative"] as (Sentiment | "")[]).map(
+              (s) => {
+                const active = sentiment === s;
+                const label =
+                  s === ""
+                    ? "ทั้งหมด"
+                    : s === "positive"
+                    ? "เชิงบวก"
+                    : s === "neutral"
+                    ? "กลาง ๆ"
+                    : "เชิงลบ";
+                return (
+                  <button
+                    key={s || "all"}
+                    onClick={() => setSentiment(s)}
+                    className={[
+                      "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs ring-1 transition",
+                      active
+                        ? "bg-sky-600 text-white ring-sky-600"
+                        : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
+                    ].join(" ")}
+                  >
+                    {s === "" ? (
+                      <ClipboardList className="size-3.5" />
+                    ) : (
+                      sentimentIcon[s as Sentiment]
+                    )}
+                    {label}
+                  </button>
+                );
+              }
             )}
           </div>
         </div>
-      </section>
+      </motion.div>
 
-      {/* Comments */}
-      <section className="rounded-xl border bg-white overflow-hidden">
-        <div className="flex items-center justify-between border-b bg-slate-50/60 px-4 py-2.5">
-          <div className="font-semibold">รายการความคิดเห็น</div>
-          {sum?.byTheme?.length ? (
-            <div className="hidden md:flex items-center gap-1">
-              <span className="text-xs text-slate-500 mr-1">ธีมเด่น:</span>
-              {sum.byTheme.slice(0, 3).map((t) => (
-                <span
-                  key={t.theme}
-                  className="text-xs rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5"
-                  title={`${t.cnt.toLocaleString()} รายการ`}
-                >
-                  {t.theme}
-                </span>
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <AlertTriangle className="inline-block mr-2 size-4" />
+          {error}
+        </div>
+      )}
+
+      {/* Summary chips */}
+      {!loading && !error && summary && (
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border bg-white p-4 shadow-sm flex items-center justify-between">
+            <div>
+              <div className="text-xs text-slate-500">จำนวนความคิดเห็นทั้งหมด</div>
+              <div className="mt-1 text-2xl font-semibold">
+                {comments.length}
+              </div>
+            </div>
+            <MessageSquare className="size-6 text-sky-500" />
+          </div>
+          {(["positive", "neutral", "negative"] as Sentiment[]).map((s) => (
+            <div
+              key={s}
+              className="rounded-2xl border bg-white p-4 shadow-sm flex items-center justify-between"
+            >
+              <div>
+                <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                  {sentimentIcon[s]}
+                  {sentimentLabel[s]}
+                </div>
+                <div className="mt-1 text-2xl font-semibold">
+                  {bySentMap[s] ?? 0}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Main 2-column layout */}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)]">
+        {/* Left: Comments list */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border bg-white shadow-sm overflow-hidden"
+        >
+          <div className="flex items-center justify-between border-b bg-slate-50/70 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="size-4 text-sky-600" />
+              <h2 className="text-sm font-semibold text-slate-800">
+                ความคิดเห็นล่าสุด
+              </h2>
+            </div>
+            <span className="text-xs text-slate-500">
+              ทั้งหมด {comments.length} รายการ
+            </span>
+          </div>
+          {loading ? (
+            <div className="p-6 flex items-center justify-center text-slate-500 text-sm gap-2">
+              <Loader2 className="size-4 animate-spin" />
+              กำลังโหลดข้อมูล...
+            </div>
+          ) : comments.length === 0 ? (
+            <div className="p-6 text-center text-sm text-slate-500">
+              — ไม่มีความคิดเห็นในช่วงนี้ —
+            </div>
+          ) : (
+            <div className="divide-y max-h-[70vh] overflow-y-auto">
+              {comments.map((c) => (
+                <div key={c.answer_id} className="p-4 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] text-slate-500">
+                      {formatStable(c.created_at)} • {c.user_group}
+                    </div>
+                    <div className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600">
+                      <span className="truncate max-w-[120px]">
+                        {c.department_name}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-sm leading-relaxed">{c.comment}</div>
+                  <div className="text-[11px] text-slate-500 line-clamp-2">
+                    {c.question_text}
+                  </div>
+                  {c.themes.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {c.themes.map((t) => (
+                        <span
+                          key={t}
+                          className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 ring-1 ring-sky-100"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ปุ่มสร้างภารกิจ: เฉพาะ dept_head / admin */}
+                  {canCreateAction && (
+                    <div className="pt-2">
+                      <button
+                        onClick={() => handleOpenCreateAction(c)}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-700"
+                      >
+                        <Plus className="size-3.5" />
+                        เพิ่มการแก้ไขปัญหาจากความคิดเห็นนี้
+                      </button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
-          ) : null}
-        </div>
+          )}
+        </motion.div>
 
-        <div className="overflow-auto">
-          <table
-            className="min-w-[1120px] w-full text-sm border-collapse table-fixed"
-            style={{ wordBreak: "break-word" }}
-          >
-            <thead className="sticky top-0 z-10 bg-white">
-              <tr className="border-b text-slate-700">
-                <th className={`${TH} w-32`}>วันที่</th>
-                <th className={`${TH} w-36`}>กลุ่ม</th>
-                <th className={`${TH} w-[26%]`}>คำถาม</th>
-                <th className={`${TH} w-44`}>อารมณ์</th>
-                <th className={`${TH} w-44`}>ธีม</th>
-                <th className={`${TH} w-[50%]`}>ความคิดเห็น</th>
-                <th className={`${TH} w-40`}>ภารกิจ</th>
-              </tr>
-            </thead>
-            <tbody className="leading-relaxed">
-              {loading ? (
-                <TableLoading cols={7} TD={TD} />
-              ) : rows.length ? (
-                rows.map((r) => (
-                  <tr key={r.answer_id} className="border-b hover:bg-slate-50/50">
-                    <td className={`${TD} whitespace-nowrap`}>{toDDMMYYYY(r.created_at)}</td>
-                    <td className={`${TD} whitespace-nowrap`}>{r.user_group}</td>
-                    <td className={TD}>{r.question_text}</td>
-                    <td className={`${TD} whitespace-nowrap`}>
-                      <SentimentBadge s={r.sentiment} score={r.sentiment_score} />
-                    </td>
-                    <td className={TD}>
-                      <ThemeChips themes={r.themes} />
-                    </td>
-                    <td className={TD}>
-                      <ClampText text={r.comment} lines={4} />
-                    </td>
-                    <td className={TD}>
-                      <button
-                        className="inline-flex items-center gap-1 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs hover:bg-blue-700"
-                        onClick={() => openDrawer(r)}
-                        title="สร้างภารกิจจากคอมเมนต์นี้"
-                      >
-                        <span>＋</span> สร้างภารกิจ
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={7} className="p-6 text-center text-slate-500">
-                    ไม่มีความคิดเห็นที่ตรงกับตัวกรอง
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Actions */}
-      <section className="rounded-xl border bg-white overflow-hidden">
-        <div className="flex items-center gap-2 border-b bg-slate-50/60 px-4 py-2.5">
-          <div className="font-semibold">ภารกิจจากคอมเมนต์</div>
-          <div className="ml-auto flex items-center gap-2">
-            <select
-              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-              value={actionStatusFilter}
-              onChange={(e) => setActionStatusFilter(e.target.value)}
-              title="กรองสถานะ"
-            >
-              <option value="">ทุกสถานะ</option>
-              <option value="open">เปิดใหม่</option>
-              <option value="in_progress">กำลังดำเนินการ</option>
-              <option value="done">เสร็จสิ้น</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="overflow-auto">
-          <table
-            className="min-w-[980px] w-full text-sm border-collapse table-fixed"
-            style={{ wordBreak: "break-word" }}
-          >
-            <thead className="sticky top-0 z-10 bg-white">
-              <tr className="border-b text-slate-700">
-                <th className={`${TH}`}>เรื่อง</th>
-                <th className={`${TH} w-44`}>ผู้รับผิดชอบ</th>
-                <th className={`${TH} w-36`}>สถานะ</th>
-                <th className={`${TH} w-36`}>อัปเดตเมื่อ</th>
-                <th className={`${TH} w-48`}>เปลี่ยนสถานะ</th>
-              </tr>
-            </thead>
-            <tbody className="leading-relaxed">
-              {actionLoading ? (
-                <TableLoading cols={5} TD={TD} />
-              ) : sortedActions.length ? (
-                sortedActions.map((a) => (
-                  <tr key={a.id} className="border-b hover:bg-slate-50/50">
-                    <td className={TD}>
-                      <div className="font-medium">{a.title}</div>
-                      <div className="text-xs text-slate-500">
-                        #{a.id} • จากคำตอบ #{a.answer_id}
-                      </div>
-                      {a.notes ? (
-                        <div className="mt-1 text-xs text-slate-600 line-clamp-2">{a.notes}</div>
-                      ) : null}
-                    </td>
-                    <td className={TD}>{a.assignee || "-"}</td>
-                    <td className={TD}>
-                      <StatusBadge status={a.status} />
-                    </td>
-                    <td className={`${TD} whitespace-nowrap`}>{toDDMMYYYY(a.updated_at)}</td>
-                    <td className={TD}>
-                      {/* แนวตั้ง: เปิดใหม่ (บน) → กำลังทำ (กลาง) → เสร็จสิ้น (ล่าง) */}
-                      <div className="inline-flex flex-col items-stretch rounded-md border border-slate-200 overflow-hidden">
-                        <SegBtn
-                          active={a.status === "open"}
-                          onClick={() => updateActionStatus(a.id, "open")}
-                          label="เปิดใหม่"
-                          rounded="top"
-                        />
-                        <SegBtn
-                          active={a.status === "in_progress"}
-                          onClick={() => updateActionStatus(a.id, "in_progress")}
-                          label="กำลังทำ"
-                        />
-                        <SegBtn
-                          active={a.status === "done"}
-                          onClick={() => updateActionStatus(a.id, "done")}
-                          label="เสร็จสิ้น"
-                          rounded="bottom"
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="p-6 text-center text-slate-500">
-                    ยังไม่มีภารกิจ
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Drawer: สร้างภารกิจ */}
-      {drawerOpen && selectedComment && (
-        <div className="fixed inset-0 z-50">
-          {/* backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
-            onClick={() => setDrawerOpen(false)}
-          />
-          {/* panel */}
-          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="font-semibold">สร้างภารกิจ</div>
-              <button
-                className="rounded-lg border bg-red-500  px-3 py-1.5 text-sm hover:bg-red-600 text-white"
-                onClick={() => setDrawerOpen(false)}
-              >
-                ปิด
-              </button>
+        {/* Right: Actions panel */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border bg-white shadow-sm flex flex-col"
+        >
+          <div className="flex items-center justify-between border-b bg-slate-50/70 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="size-4 text-sky-600" />
+              <h2 className="text-sm font-semibold text-slate-800">
+                ภารกิจการแก้ไขปัญหา
+              </h2>
             </div>
+            <span className="text-xs text-slate-500">
+              ทั้งหมด {actions.length} งาน
+            </span>
+          </div>
 
-            <div className="p-4 space-y-4">
-              {!dept && (
-                <p className="text-xs text-amber-600">
-                  ⚠️ ยังไม่พบ department_id — จะบันทึกไม่ได้จนกว่าจะโหลดสำเร็จ
-                </p>
-              )}
-
-              <InfoRow label="คำถาม" value={selectedComment.question_text} />
-              <InfoRow label="ความคิดเห็น" value={selectedComment.comment} />
-              <div className="grid grid-cols-2 gap-3">
-                <InfoRow label="กลุ่มผู้ใช้" value={selectedComment.user_group} />
-                <InfoRow
-                  label="อารมณ์"
-                  value={`${labelFromSent(selectedComment.sentiment)}${
-                    typeof selectedComment.sentiment_score === "number"
-                      ? ` (${selectedComment.sentiment_score.toFixed(2)})`
-                      : ""
-                  }`}
-                />
-              </div>
-
-              <hr className="border-slate-200" />
-
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">หัวข้อภารกิจ</label>
-                <input
-                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  // value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  placeholder="หัวข้อกระชับ ชี้ชัดสิ่งที่ต้องทำ"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">มอบหมายให้</label>
-                <input
-                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  value={formAssignee}
-                  onChange={(e) => setFormAssignee(e.target.value)}
-                  placeholder="เช่น เจ้าหน้าที่ฝ่าย..."
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">บันทึกเพิ่มเติม</label>
-                <textarea
-                  className="w-full rounded-lg border px-3 py-2 text-sm min-h-[96px] focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  // value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="รายละเอียด/แนวทางการแก้ไข/กำหนดเวลา"
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2">
+          {/* ฟอร์มสร้างภารกิจ (เฉพาะ dept_head/admin) */}
+          {canCreateAction && draftAnswerId && (
+            <div className="border-b bg-sky-50/60 px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs text-sky-800">
+                  <AlertTriangle className="size-3.5" />
+                  <span>เพิ่มการแก้ไขปัญหาใหม่</span>
+                </div>
                 <button
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
-                  onClick={submitCreate}
-                  disabled={creating}
-                >
-                  {creating ? "กำลังบันทึก…" : "สร้างภารกิจ"}
-                </button>
-                <button
-                  className="rounded-lg border bg-red-500 px-4 py-2 text-sm hover:bg-red-600 text-white"
-                  onClick={() => setDrawerOpen(false)}
+                  onClick={handleCancelDraft}
+                  className="text-[11px] text-slate-500 hover:text-slate-700"
                 >
                   ยกเลิก
                 </button>
               </div>
-
-              {!dept && (
-                <p className="text-xs text-red-600">
-                  ไม่พบ department_id ของหน่วยงานนี้ — ตรวจสอบ API /api/departments/{String(departmentCode)}
-                </p>
-              )}
+              <div className="space-y-2">
+                <div>
+                  <label className="text-[11px] text-slate-600">
+                    หัวข้อการแก้ไข
+                  </label>
+                  <input
+                    value={draftTitle}
+                    onChange={(e) => setDraftTitle(e.target.value)}
+                    className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] text-slate-600">
+                      ผู้รับผิดชอบ (ถ้ามี)
+                    </label>
+                    <input
+                      value={draftAssignee}
+                      onChange={(e) => setDraftAssignee(e.target.value)}
+                      className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-600">
+                      หมายเหตุ (ถ้ามี)
+                    </label>
+                    <input
+                      value={draftNotes}
+                      onChange={(e) => setDraftNotes(e.target.value)}
+                      className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    onClick={handleCancelDraft}
+                    className="rounded-lg border px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    disabled={savingAction}
+                    onClick={handleSubmitAction}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs text-white hover:bg-sky-700 disabled:opacity-60"
+                  >
+                    {savingAction && (
+                      <Loader2 className="size-3 animate-spin" />
+                    )}
+                    บันทึกภารกิจ
+                  </button>
+                </div>
+              </div>
             </div>
+          )}
+
+          {/* รายการภารกิจ */}
+          <div className="flex-1 overflow-y-auto max-h-[70vh]">
+            {loading ? (
+              <div className="p-6 flex items-center justify-center text-slate-500 text-sm gap-2">
+                <Loader2 className="size-4 animate-spin" />
+                กำลังโหลดภารกิจ...
+              </div>
+            ) : actions.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">
+                — ยังไม่มีภารกิจที่สร้างจากความคิดเห็น —
+              </div>
+            ) : (
+              <div className="divide-y">
+                {actions.map((a) => (
+                  <div key={a.id} className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-medium text-slate-800">
+                          {a.title}
+                        </div>
+                        {a.assignee && (
+                          <div className="mt-0.5 text-[11px] text-slate-500">
+                            ผู้รับผิดชอบ:{" "}
+                            <span className="font-medium">
+                              {a.assignee}
+                            </span>
+                          </div>
+                        )}
+                        {a.notes && (
+                          <div className="mt-0.5 text-[11px] text-slate-500">
+                            หมายเหตุ: {a.notes}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right space-y-1">
+                        <span
+                          className={[
+                            "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] ring-1",
+                            statusColorClass[a.status],
+                          ].join(" ")}
+                        >
+                          <CheckCircle2 className="size-3" />
+                          {statusLabel[a.status]}
+                        </span>
+                        <div className="text-[10px] text-slate-400">
+                          ปรับปรุงล่าสุด {formatStable(a.updated_at)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* เปลี่ยนสถานะ: เฉพาะ staff/admin */}
+                    {canUpdateStatus && (
+                      <div className="pt-1 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-500">
+                          ปรับสถานะงาน
+                        </span>
+                        <select
+                          value={a.status}
+                          onChange={(e) =>
+                            handleChangeStatus(
+                              a.id,
+                              e.target.value as ActionStatus
+                            )
+                          }
+                          className="rounded-md border px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-sky-500"
+                        >
+                          <option value="open">เปิด</option>
+                          <option value="in_progress">กำลังดำเนินการ</option>
+                          <option value="done">เสร็จสิ้น</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        </motion.div>
+      </div>
     </div>
-  );
-}
-
-/** ---------- Small UI helpers ---------- */
-function CardStat({
-  title,
-  value,
-  tone,
-}: {
-  title: string;
-  value: number;
-  tone: "green" | "slate" | "rose";
-}) {
-  const toneMap: Record<string, string> = {
-    green: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    slate: "bg-slate-50 text-slate-700 border-slate-100",
-    rose: "bg-rose-50 text-rose-700 border-rose-100",
-  };
-  return (
-    <div className={`rounded-xl border ${toneMap[tone]} p-4`}>
-      <div className="text-[12px]">{title}</div>
-      <div className="text-3xl font-extrabold tracking-tight">{value.toLocaleString()}</div>
-    </div>
-  );
-}
-
-function MiniKPI({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "green" | "slate" | "rose";
-}) {
-  const toneDot: Record<string, string> = {
-    green: "bg-emerald-500",
-    slate: "bg-slate-500",
-    rose: "bg-rose-500",
-  };
-  return (
-    <div className="flex items-center gap-2 rounded-lg border bg-white px-2.5 py-1.5">
-      <span className={`h-2.5 w-2.5 rounded-full ${toneDot[tone]}`} />
-      <span className="text-[12px] text-slate-600">{label}</span>
-      <span className="text-sm font-semibold">{value.toLocaleString()}</span>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: "open" | "in_progress" | "done" }) {
-  const map: Record<string, string> = {
-    open: "bg-amber-100 text-amber-800 border-amber-200",
-    in_progress: "bg-sky-100 text-sky-800 border-sky-200",
-    done: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  };
-  const label: Record<string, string> = {
-    open: "เปิดใหม่",
-    in_progress: "กำลังดำเนินการ",
-    done: "เสร็จสิ้น",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs ${map[status]}`}
-      title={label[status]}
-    >
-      {label[status]}
-    </span>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="text-sm">
-      <div className="text-slate-500">{label}</div>
-      <div className="font-medium">{value || "-"}</div>
-    </div>
-  );
-}
-
-function TableLoading({ cols, TD }: { cols: number; TD: string }) {
-  return (
-    <>
-      {Array.from({ length: 6 }).map((_, i) => (
-        <tr key={i} className="border-b">
-          {Array.from({ length: cols }).map((__, j) => (
-            <td key={j} className={TD}>
-              <div className="h-4 w-full max-w-[220px] animate-pulse rounded bg-slate-100" />
-            </td>
-          ))}
-        </tr>
-      ))}
-    </>
-  );
-}
-
-function SegBtn({
-  active,
-  label,
-  onClick,
-  rounded,
-}: {
-  active?: boolean;
-  label: string;
-  onClick: () => void;
-  rounded?: "top" | "bottom";
-}) {
-  const radius =
-    rounded === "top"
-      ? "rounded-t-md"
-      : rounded === "bottom"
-      ? "rounded-b-md"
-      : "rounded-none";
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 text-xs border-t first:border-t-0 ${
-        active
-          ? `bg-sky-600 text-white ${radius}`
-          : `bg-white hover:bg-slate-50 ${radius}`
-      }`}
-      aria-pressed={active}
-      style={{ borderColor: "rgb(226 232 240)" }} // slate-200
-    >
-      {label}
-    </button>
-  );
-}
-
-function SentimentBadge({
-  s,
-  score,
-}: {
-  s: CommentRow["sentiment"];
-  score: number | null;
-}) {
-  const label = labelFromSent(s);
-  const color =
-    s === "positive"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-      : s === "negative"
-      ? "bg-rose-50 text-rose-700 border-rose-100"
-      : "bg-slate-50 text-slate-700 border-slate-100";
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${color}`}>
-      {label}
-      {typeof score === "number" && <span className="text-[11px] opacity-70">({score.toFixed(2)})</span>}
-    </span>
-  );
-}
-
-function labelFromSent(s: CommentRow["sentiment"]) {
-  if (s === "positive") return "เชิงบวก";
-  if (s === "negative") return "เชิงลบ";
-  if (s === "neutral" || s == null) return "กลาง ๆ";
-  return String(s);
-}
-
-function ThemeChips({ themes }: { themes: string[] | null }) {
-  if (!themes?.length) return <span className="text-xs text-slate-400">-</span>;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {themes.map((t) => (
-        <span
-          key={t}
-          className="text-xs rounded-full bg-violet-50 text-violet-700 border border-violet-100 px-2 py-0.5"
-        >
-          {t}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function ClampText({ text, lines = 3 }: { text: string; lines?: number }) {
-  return (
-    <p
-      className="text-slate-800"
-      style={{
-        display: "-webkit-box",
-        WebkitLineClamp: lines,
-        WebkitBoxOrient: "vertical",
-        overflow: "hidden",
-      }}
-      title={text}
-    >
-      {text}
-    </p>
   );
 }

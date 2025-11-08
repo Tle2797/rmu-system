@@ -1,4 +1,4 @@
-// server/routes/comments.routes.ts
+// src/server/routes/comments.routes.ts
 import type { Elysia } from "elysia";
 import {
   searchComments,

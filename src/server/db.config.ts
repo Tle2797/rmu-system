@@ -1,4 +1,4 @@
-// server/db.config.ts
+// src/server/db.config.ts
 import "server-only"; // ป้องกันไม่ให้ไฟล์นี้ไปโผล่ฝั่ง client
 import pgPromise from "pg-promise";
 

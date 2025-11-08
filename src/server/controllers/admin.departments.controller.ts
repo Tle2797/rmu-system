@@ -1,3 +1,4 @@
+// src/server/controllers/admin.departments.controller.ts
 import { db } from "../db.config";
 
 export async function adminUpdateDepartment(codeParam: string, body: any) {

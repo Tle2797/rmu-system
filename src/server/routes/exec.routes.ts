@@ -1,4 +1,4 @@
-// server/routes/exec.routes.ts
+// src/server/routes/exec.routes.ts
 import type { Elysia } from "elysia";
 import { getRank, getHeatmap, getTrend } from "../controllers/exec.controller";
 

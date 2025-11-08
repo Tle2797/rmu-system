@@ -1,4 +1,4 @@
-// server/controllers/exec.controller.ts
+// src/server/controllers/exec.controller.ts
 import { db } from "../db.config";
 
 /** ---------- Types ---------- */

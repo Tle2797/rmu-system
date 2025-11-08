@@ -1,4 +1,4 @@
-// server/routes/department.routes.ts
+// src/server/routes/department.routes.ts
 import type { Elysia } from "elysia";
 import { getDepartmentByCode, listDepartments } from "../controllers/department.controller";
 

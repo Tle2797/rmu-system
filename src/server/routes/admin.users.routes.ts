@@ -1,3 +1,4 @@
+// src/server/routes/admin.users.routes.ts
 import type { Elysia } from "elysia";
 import {
   adminListUsers, adminCreateUser, adminUpdateUser, adminResetPassword, adminDeleteUser

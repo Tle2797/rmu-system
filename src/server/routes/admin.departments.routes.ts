@@ -1,3 +1,4 @@
+// src/server/routes/admin.departments.routes.ts
 import type { Elysia } from "elysia";
 import { adminUpdateDepartment, adminDeleteDepartment } from "../controllers/admin.departments.controller";
 import { createDepartment, listDepartments, regenerateQrForDepartment } from "../controllers/admin.controller";

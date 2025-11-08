@@ -1,4 +1,4 @@
-// server/controllers/department.controller.ts
+// src/server/controllers/department.controller.ts
 import { db } from "../db.config";
 
 /** 🔹 รายการหน่วยงานแบบสาธารณะ (ใช้ในหน้า /survey) */

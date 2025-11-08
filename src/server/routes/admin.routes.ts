@@ -1,4 +1,4 @@
-// server/routes/admin.routes.ts
+// src/server/routes/admin.routes.ts
 import type { Elysia } from "elysia";
 import {
   // Questions

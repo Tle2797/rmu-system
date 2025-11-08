@@ -1,4 +1,4 @@
-// controllers/auth.controller.ts
+// src/server/controllers/auth.controller.ts
 import { db } from "../db.config";
 import { comparePassword } from "../auth/password";
 import { signToken, verifyToken, type JwtPayload } from "../auth/session";

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
-/** โครงรายการหน่วยงาน */
 type DepartmentRow = {
   id: number;
   code: string;
@@ -12,27 +11,23 @@ type DepartmentRow = {
 };
 
 export default function SurveyIndexPage() {
-  // ---------- lock body scroll ----------
   useEffect(() => {
-    const prev = document.body.style.overflowY;
-    document.body.style.overflowY = "hidden";
-    return () => { document.body.style.overflowY = prev; };
+    document.body.style.overflowY = "auto";
+    return () => { document.body.style.overflowY = "auto"; };
   }, []);
 
-  // ---------- state ----------
   const [departments, setDepartments] = useState<DepartmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
   const [q, setQ] = useState("");
   const [centralLink, setCentralLink] = useState<string>("/survey");
   const [centralQR, setCentralQR] = useState<string>("/api/qrcode/central.png");
+  const [visibleCount, setVisibleCount] = useState(9); // แสดง 9 หน่วยงานเริ่มต้น
 
-  // ---------- load data ----------
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        setLoading(true);
         const res = await axios.get<DepartmentRow[]>("/api/departments");
         if (!active) return;
         setDepartments(Array.isArray(res.data) ? res.data : []);
@@ -45,7 +40,6 @@ export default function SurveyIndexPage() {
       }
     })();
 
-    // หลัง mount ค่อยอัปเดตลิงก์ absolute
     try {
       const abs = `${window.location.origin}/survey`;
       setCentralLink(abs);
@@ -54,16 +48,18 @@ export default function SurveyIndexPage() {
     return () => { active = false; };
   }, []);
 
-  // ---------- filtered ----------
   const filtered = useMemo(() => {
     if (!q.trim()) return departments;
     const s = q.toLowerCase();
     return departments.filter(
-      (d) => d.code.toLowerCase().includes(s) || d.name.toLowerCase().includes(s)
+      (d) =>
+        d.code.toLowerCase().includes(s) || d.name.toLowerCase().includes(s)
     );
   }, [departments, q]);
 
-  // ---------- helpers ----------
+  const visibleDepartments = filtered.slice(0, visibleCount);
+  const hasMore = visibleCount < filtered.length;
+
   const download = (url: string, filename = "central-qr") => {
     const a = document.createElement("a");
     a.href = url;
@@ -71,135 +67,93 @@ export default function SurveyIndexPage() {
     a.click();
   };
 
+  const SkeletonCard = () => (
+    <div className="rounded-xl border bg-white shadow-sm p-6 flex flex-col items-center justify-center text-center animate-pulse">
+      <div className="h-4 w-3/4 rounded bg-slate-200 mb-3" />
+      <div className="h-8 w-28 rounded bg-slate-200" />
+    </div>
+  );
+
   return (
-    // ✅ ใช้คอนเทนเนอร์หลักตัวเดียวเป็น scroll container
-    <div className="h-dvh overflow-y-auto overflow-x-hidden overscroll-contain bg-gradient-to-b from-sky-50 via-white to-slate-50">
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b">
-        <div className="mx-auto max-w-5xl px-4 py-4 flex items-center justify-between">
-          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">
-            แบบประเมินความพึงพอใจ (หน้าเลือกหน่วยงาน)
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-b from-sky-50 via-white to-slate-50">
+      <header className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
+        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-center sm:justify-start gap-3">
+          <img src="/logos/rmu.png" alt="RMU Logo" className="w-10 h-10 sm:w-12 sm:h-12 object-contain" />
+          <h1 className="text-lg sm:text-2xl font-extrabold text-slate-800 text-center sm:text-left">
+            แบบประเมินความพึงพอใจหน่วยงาน
           </h1>
-          <span className="text-xs text-slate-500">/survey</span>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-6 space-y-8">
-        {/* คิวอาร์ส่วนกลาง */}
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:py-10 space-y-8">
+        {/* รายชื่อหน่วยงาน */}
         <section className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-          <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-sky-50 to-white">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-semibold text-slate-900">คิวอาร์โค้ดส่วนกลาง</div>
-                <p className="text-[13px] text-slate-600 mt-1">
-                  ใช้คิวอาร์นี้สำหรับงานกิจกรรม/ป้ายประชาสัมพันธ์ เมื่อแสกนจะมาที่หน้านี้เพื่อค้นหาและเลือกหน่วยงานก่อนทำแบบประเมิน
-                </p>
-              </div>
-              <div className="hidden sm:block text-[12px] text-slate-500">
-                แคชภาพ 1 ชั่วโมง • เส้นทาง: <code>/api/qrcode/central.png</code>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6 items-start">
-            <div className="flex items-center justify-center">
-              <img
-                src={centralQR}
-                alt="QR Code /survey"
-                className="w-[220px] h-[220px] bg-white border rounded-xl p-3 shadow-sm object-contain"
+          <div className="p-4 sm:p-5 border-b bg-gradient-to-r from-slate-50 to-white">
+            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
+              ค้นหาและเลือกหน่วยงาน
+            </h2>
+            <p className="text-[13px] text-slate-600 mt-1">
+              พิมพ์ชื่อหน่วยงาน แล้วคลิกเพื่อไปทำแบบประเมิน
+            </p>
+            <form onSubmit={(e) => e.preventDefault()} className="mt-3 flex flex-col sm:flex-row gap-2">
+              <input
+                className="w-full sm:w-[320px] rounded-lg border p-2 focus:border-blue-500 focus:ring-blue-500 text-sm"
+                placeholder="ค้นหาชื่อหน่วยงาน"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
               />
-            </div>
+              <button type="submit" className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm shadow-sm w-full sm:w-auto">
+                ค้นหา
+              </button>
+            </form>
+          </div>
 
-            <div className="space-y-4">
-              <div>
-                <div className="text-slate-700 text-sm">ลิงก์ส่วนกลาง</div>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <a href={centralLink} target="_blank" className="text-blue-600 hover:underline break-all">
-                    {centralLink}
-                  </a>
-                  <button
-                    onClick={() => navigator.clipboard?.writeText(centralLink)}
-                    className="rounded border px-2 py-1 text-xs hover:bg-white"
+          {/* loading */}
+          {loading && (
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          )}
+          {!loading && err && <div className="p-6 text-rose-700 bg-rose-50 text-center">❌ {err}</div>}
+          {!loading && !err && filtered.length === 0 && (
+            <div className="p-6 text-slate-500 text-center">ไม่พบหน่วยงาน</div>
+          )}
+
+          {/* แสดงหน่วยงาน */}
+          {!loading && !err && filtered.length > 0 && (
+            <>
+              <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                {visibleDepartments.map((d) => (
+                  <div
+                    key={d.id}
+                    className="group rounded-xl border bg-white shadow-sm p-5 flex flex-col items-center justify-center text-center hover:shadow-md transition-all"
                   >
-                    คัดลอก
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => download(centralQR, "survey-central")}
-                  className="rounded-lg bg-sky-600 hover:bg-sky-700 text-white px-4 py-2"
-                >
-                  ดาวน์โหลดคิวอาร์ (PNG)
-                </button>
-                <a href={centralQR} target="_blank" className="rounded-lg border px-4 py-2 hover:bg-white">
-                  เปิดรูปเต็ม
-                </a>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ค้นหาและเลือกหน่วยงาน */}
-        <section className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-          <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-slate-50 to-white">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <div className="text-lg font-semibold text-slate-900">ค้นหาและเลือกหน่วยงาน</div>
-                <p className="text-[13px] text-slate-600 mt-1">
-                  พิมพ์ชื่อหรือรหัสหน่วยงาน แล้วคลิกเพื่อไปทำแบบประเมินของหน่วยงานนั้น
-                </p>
-              </div>
-              <form onSubmit={(e) => e.preventDefault()} className="flex gap-2">
-                <input
-                  className="w-[240px] rounded-lg border focus:border-blue-500 focus:ring-blue-500 p-2"
-                  placeholder="ค้นหา (รหัส/ชื่อ)"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                />
-                <button
-                  type="submit"
-                  className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm shadow-sm transition-colors"
-                >
-                  ค้นหา
-                </button>
-              </form>
-            </div>
-          </div>
-
-          <div className="divide-y">
-            {loading && <div className="p-6 text-slate-500">กำลังโหลดข้อมูล…</div>}
-            {!loading && err && <div className="p-6 text-rose-700 bg-rose-50">❌ {err}</div>}
-            {!loading && !err && filtered.length === 0 && (
-              <div className="p-6 text-slate-500">ไม่พบหน่วยงาน</div>
-            )}
-
-            {!loading && !err && filtered.map((d) => (
-              <div key={d.id} className="p-4 sm:p-5 hover:bg-slate-50/50 transition-colors">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-semibold text-slate-900 truncate">{d.name}</div>
-                    <div className="text-sm text-slate-500">รหัส: {d.code}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
+                    <div className="font-semibold text-slate-900 text-sm sm:text-base mb-4">
+                      {d.name}
+                    </div>
                     <a
                       href={`/survey/${encodeURIComponent(d.code)}`}
-                      className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 text-sm"
                       target="_blank"
+                      className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-sm shadow-sm transition w-full sm:w-auto"
                     >
                       เริ่มทำแบบประเมิน
                     </a>
-                    <a
-                      href={`/survey/${encodeURIComponent(d.code)}`}
-                      className="rounded-lg border px-3 py-2 text-sm hover:bg-white"
-                    >
-                      เปิดลิงก์
-                    </a>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+
+              {hasMore && (
+                <div className="p-4 flex justify-center">
+                  <button
+                    onClick={() => setVisibleCount((v) => v + 9)}
+                    className="rounded-lg bg-slate-100 hover:bg-slate-200 px-6 py-2 text-sm font-medium text-slate-700 shadow-sm"
+                  >
+                    ดูเพิ่มเติม
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </section>
       </main>
     </div>

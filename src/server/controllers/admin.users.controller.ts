@@ -1,3 +1,4 @@
+// src/server/controllers/admin.users.controller.ts
 import { db } from "../db.config";
 import bcrypt from "bcryptjs";
 

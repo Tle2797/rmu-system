@@ -1,4 +1,4 @@
-// server/routes/auth.routes.ts
+// src/server/routes/auth.routes.ts
 import type { Elysia } from "elysia";
 import { login, me } from "../controllers/auth.controller";
 

@@ -1,4 +1,4 @@
-// routes/response.routes.ts
+// src/server/routes/response.routes.ts
 import type { Elysia } from "elysia";
 import { submitResponse } from "../controllers/response.controller";
 

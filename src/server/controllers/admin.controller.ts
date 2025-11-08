@@ -1,4 +1,4 @@
-// server/controllers/admin.controller.ts
+// src/server/controllers/admin.controller.ts
 import { db } from "../db.config";
 import QRCode from "qrcode";
 import fs from "fs";

@@ -1,3 +1,4 @@
+// src/server/controllers/admin.questions.controller.ts
 import { db } from "../db.config";
 
 /**

@@ -1,4 +1,4 @@
-// server/controllers/response.controller.ts
+// src/server/controllers/response.controller.ts
 import { db } from "../db.config";
 
 type Answer = { question_id: number; rating?: number; comment?: string };

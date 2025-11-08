@@ -1,4 +1,4 @@
-// server/controllers/comments.controller.ts
+// src/server/controllers/comments.controller.ts
 import { db } from "../db.config";
 
 /** ---------------- Sentiment Logic ---------------- */

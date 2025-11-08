@@ -1,4 +1,4 @@
-// server/controllers/qrcode.controller.ts
+// src/server/controllers/qrcode.controller.ts
 import QRCode from "qrcode";
 
 /** สร้าง PNG ของ QR ที่ชี้ไปยัง /survey */

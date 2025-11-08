@@ -1,3 +1,4 @@
+// src/server/controllers/survey.controller.ts
 import { db } from "../db.config";
 
 /** ดึง meta ของแบบสอบถาม */

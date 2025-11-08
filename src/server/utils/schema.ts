@@ -1,4 +1,4 @@
-// server/utils/schema.ts
+// src/server/utils/schema.ts
 import { z } from "zod";
 
 /** common */

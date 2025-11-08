@@ -1,3 +1,4 @@
+// src/server/routes/admin.questions.routes.ts
 import type { Elysia } from "elysia";
 import {
   adminListQuestions, adminCreateQuestion, adminUpdateQuestion, adminDeleteQuestion

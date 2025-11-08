@@ -1,4 +1,4 @@
-// server/routes/survey.routes.ts
+// src/server/routes/survey.routes.ts
 import type { Elysia } from "elysia";
 import {
   getSurveyMeta,

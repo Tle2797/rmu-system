@@ -1,4 +1,4 @@
-// server/routes/dashboard.routes.ts
+// src/server/routes/dashboard.routes.ts
 import type { Elysia } from "elysia";
 import {
   getDeptSummary,
