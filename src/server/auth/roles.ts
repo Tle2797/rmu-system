@@ -1,4 +1,4 @@
-// server/auth/roles.ts
+// src/server/auth/roles.ts
 import type { JwtPayload } from "./session";
 
 export const allowRoles = (...roles: JwtPayload["role"][]) =>
@@ -21,10 +21,12 @@ export const menuForRole = (user?: JwtPayload | null) => {
     dept_head: [
       { label: "แดชบอร์ดหน่วยงาน", href: `/dashboard/${dept}` },
       { label: "คอมเมนต์/ภารกิจ", href: `/dashboard/${dept}/comments` },
+      { label: "สรุปข้อมูลรายปี", href: `/dashboard/${dept}/yearly` }, // 👈 เพิ่ม
     ],
     staff: [
       { label: "งานวันนี้", href: `/dashboard/${dept}/today` },
       { label: "แดชบอร์ดหน่วยงาน", href: `/dashboard/${dept}` },
+      { label: "สรุปข้อมูลรายปี", href: `/dashboard/${dept}/yearly` }, // 👈 เพิ่ม
     ],
   } as const;
   return map[user?.role || "staff"];

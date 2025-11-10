@@ -700,3 +700,58 @@ export const exportDeptPdf = async (
   const pdfBytes = await pdf.save();
   return pdfBytes;
 };
+
+// ===== เพิ่มด้านล่างสุดของไฟล์ dashboard.controller.ts =====
+
+export type DeptYearRow = {
+  year: number;
+  avg_rating: number | null;
+  answers_count: number;    // จำนวนคำตอบทั้งหมด
+  responses_count: number;  // จำนวนผู้ทำแบบประเมิน (ครั้งการตอบ)
+};
+
+export type DeptYearlySummary =
+  | { department_id: number; department_name: string; items: DeptYearRow[] }
+  | { error: string };
+
+/**
+ * สรุปผลรายปีของหน่วยงาน
+ * - แยกตามปีของ responses.created_at
+ * - นับทั้งจำนวนคำตอบ (answers_count) และจำนวนครั้งการทำแบบประเมิน (responses_count)
+ * - เฉลี่ยคะแนนจากเฉพาะคำถามประเภท rating
+ */
+export const getDeptYearlySummary = async (
+  code: string,
+  surveyId: number
+): Promise<DeptYearlySummary> => {
+  // หา department_id + name จาก code
+  const dep = await db.oneOrNone(
+    "SELECT id, name FROM departments WHERE code = $1",
+    [code]
+  );
+  if (!dep) return { error: "ไม่พบหน่วยงานนี้" };
+
+  const sql = `
+    SELECT
+      DATE_PART('year', r.created_at)::int AS year,
+      ROUND(AVG(a.rating)::numeric, 2)      AS avg_rating,
+      COUNT(a.id)::int                      AS answers_count,
+      COUNT(DISTINCT r.id)::int             AS responses_count
+    FROM responses r
+    JOIN answers   a ON a.response_id = r.id
+    JOIN questions q ON q.id = a.question_id AND q.type = 'rating'
+    WHERE r.survey_id = $1
+      AND r.department_id = $2
+    GROUP BY DATE_PART('year', r.created_at)
+    ORDER BY year ASC
+  `;
+
+  const rows = await db.any<DeptYearRow>(sql, [surveyId, dep.id]);
+
+  return {
+    department_id: dep.id as number,
+    department_name: dep.name as string,
+    items: rows,
+  };
+};
+

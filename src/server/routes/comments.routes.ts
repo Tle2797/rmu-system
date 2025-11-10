@@ -3,15 +3,29 @@ import type { Elysia } from "elysia";
 import {
   searchComments,
   getCommentsSummary,
-  // ⬇️ เพิ่ม 3 ฟังก์ชันสำหรับภารกิจ
   listActions,
   createAction,
   updateAction,
 } from "../controllers/comments.controller";
+import { verifyToken, type JwtPayload } from "../auth/session";
 
 type Sentiment = "positive" | "neutral" | "negative";
 const isSentiment = (s?: string): s is Sentiment =>
   s === "positive" || s === "neutral" || s === "negative";
+
+/** helper: ดึง user จาก token ใน header/cookie (ใช้เหมือน /auth/me) */
+function getUserFromRequest(request: Request): JwtPayload | null {
+  const bearer = request.headers.get("authorization");
+  const fromBearer = bearer?.replace(/^Bearer\s+/i, "");
+  const fromCookie = request.headers
+    .get("cookie")
+    ?.match(/(?:^|;\s*)token=([^;]+)/)?.[1];
+
+  const token = fromBearer || fromCookie || "";
+  if (!token) return null;
+
+  return verifyToken(token);
+}
 
 export default (app: Elysia) =>
   app
@@ -91,10 +105,23 @@ export default (app: Elysia) =>
 
     // -------------------------------------------------------
     // 4) ภารกิจจากคอมเมนต์: สร้างใหม่
+    //    ✅ อนุญาตเฉพาะ role = dept_head (และ admin ถ้าต้องการ)
     // POST /api/comments/actions
     // body: { answer_id:number, department_id:number, title:string, assignee?:string|null, notes?:string|null }
     // -------------------------------------------------------
-    .post("/comments/actions", async ({ body, set }) => {
+    .post("/comments/actions", async ({ body, set, request }) => {
+      const user = getUserFromRequest(request);
+      if (!user) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+
+      // อนุญาตเฉพาะ dept_head (เพิ่ม admin ด้วยก็ได้ ถ้าต้องการ)
+      if (user.role !== "dept_head" && user.role !== "admin") {
+        set.status = 403;
+        return { error: "forbidden: only dept_head can create actions" };
+      }
+
       const { answer_id, department_id, title, assignee, notes } = (body || {}) as {
         answer_id?: number;
         department_id?: number;
@@ -120,10 +147,23 @@ export default (app: Elysia) =>
 
     // -------------------------------------------------------
     // 5) ภารกิจจากคอมเมนต์: อัปเดต
+    //    ✅ อนุญาตเฉพาะ role = staff (และ admin ถ้าต้องการ)
     // PUT /api/comments/actions
     // body: { id:number, status?:'open'|'in_progress'|'done', title?:string, assignee?:string|null, notes?:string|null }
     // -------------------------------------------------------
-    .put("/comments/actions", async ({ body, set }) => {
+    .put("/comments/actions", async ({ body, set, request }) => {
+      const user = getUserFromRequest(request);
+      if (!user) {
+        set.status = 401;
+        return { error: "unauthorized" };
+      }
+
+      // staff เป็นคนเปลี่ยนสถานะ, admin อนุโลมให้ได้
+      if (user.role !== "staff" && user.role !== "admin") {
+        set.status = 403;
+        return { error: "forbidden: only staff can update actions" };
+      }
+
       const { id, status, title, assignee, notes } = (body || {}) as {
         id?: number;
         status?: "open" | "in_progress" | "done";

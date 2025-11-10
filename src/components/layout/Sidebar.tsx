@@ -92,7 +92,7 @@ export default function Sidebar({
     }
   }, [role]);
 
-  const computedItems: LocalItem[] = useMemo(() => {
+    const computedItems: LocalItem[] = useMemo(() => {
     const baseQr: LocalItem = {
       label: "QR Code",
       href: "/qr",
@@ -140,6 +140,12 @@ export default function Sidebar({
             iconKey: "clipboard",
             match: "prefix",
           },
+          {
+            label: "สรุปข้อมูลรายปี",
+            href: `${deptRoot}/yearly`,
+            iconKey: "bar",
+            match: "exact",
+          },
           baseQr,
         ];
       case "admin":
@@ -162,10 +168,10 @@ export default function Sidebar({
             iconKey: "grid",
             match: "exact",
           },
-
           baseQr,
         ];
       default:
+        // staff
         return [
           {
             label: "แดชบอร์ดหน่วยงาน",
@@ -179,10 +185,17 @@ export default function Sidebar({
             iconKey: "clipboard",
             match: "prefix",
           },
+          {
+            label: "สรุปข้อมูลรายปี",
+            href: `${deptRoot}/yearly`,
+            iconKey: "bar",
+            match: "exact",
+          },
           baseQr,
         ];
     }
   }, [items, role, departmentCode]);
+
 
   const onLogout = async () => {
     const res = await Swal.fire({

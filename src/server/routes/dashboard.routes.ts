@@ -4,7 +4,8 @@ import {
   getDeptSummary,
   getDeptComments,
   exportDeptExcel,
-  exportDeptPdf
+  exportDeptPdf,
+  getDeptYearlySummary, // 👈 เพิ่ม import
 } from "../controllers/dashboard.controller";
 
 /** helper: แปลง ArrayBuffer -> Uint8Array ให้แน่ชัด (กัน TS เตือน) */
@@ -17,7 +18,7 @@ export default (app: Elysia) =>
     .get("/departments/:code/summary", async ({ params, query, set }) => {
       const surveyId = Number(query.survey_id ?? 1);
       const from = (query.from as string) || undefined; // YYYY-MM-DD
-      const to   = (query.to as string)   || undefined; // YYYY-MM-DD (inclusive; controller จะ +1 วันเอง)
+      const to = (query.to as string) || undefined; // YYYY-MM-DD (inclusive; controller จะ +1 วันเอง)
 
       const result = await getDeptSummary(params.code, surveyId, from, to);
       if ("error" in result) set.status = 404;
@@ -30,9 +31,16 @@ export default (app: Elysia) =>
       const limit = Number(query.limit ?? 50);
       const offset = Number(query.offset ?? 0);
       const from = (query.from as string) || undefined;
-      const to   = (query.to as string)   || undefined;
+      const to = (query.to as string) || undefined;
 
-      const result = await getDeptComments(params.code, surveyId, limit, offset, from, to);
+      const result = await getDeptComments(
+        params.code,
+        surveyId,
+        limit,
+        offset,
+        from,
+        to
+      );
       if ("error" in result) set.status = 404;
       return result;
     })
@@ -41,7 +49,7 @@ export default (app: Elysia) =>
     .get("/departments/:code/export.xlsx", async ({ params, query, set }) => {
       const surveyId = Number(query.survey_id ?? 1);
       const from = (query.from as string) || undefined;
-      const to   = (query.to as string)   || undefined;
+      const to = (query.to as string) || undefined;
 
       const x = await exportDeptExcel(params.code, surveyId, from, to);
 
@@ -63,7 +71,7 @@ export default (app: Elysia) =>
     .get("/departments/:code/export.pdf", async ({ params, query, set }) => {
       const surveyId = Number(query.survey_id ?? 1);
       const from = (query.from as string) || undefined;
-      const to   = (query.to as string)   || undefined;
+      const to = (query.to as string) || undefined;
 
       const x = await exportDeptPdf(params.code, surveyId, from, to);
 
@@ -78,4 +86,13 @@ export default (app: Elysia) =>
         `attachment; filename="report_${params.code}.pdf"`;
 
       return x; // pdf-lib ให้มาเป็น Uint8Array
+    })
+
+    // 5) ✅ สรุปผลรายปีของหน่วยงาน
+    .get("/departments/:code/yearly", async ({ params, query, set }) => {
+      const surveyId = Number(query.survey_id ?? 1);
+
+      const result = await getDeptYearlySummary(params.code, surveyId);
+      if ("error" in result) set.status = 404;
+      return result;
     });
