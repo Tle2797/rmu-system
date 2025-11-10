@@ -40,12 +40,12 @@ type CommentRow = {
   comment: string;
   sentiment: Sentiment;
   sentiment_score: number | null;
-  themes: string[];
+  // themes ถูกนำออกจากหน้าแล้ว
 };
 
 type Summary = {
   bySent: { sentiment: Sentiment; cnt: number }[];
-  byTheme: { theme: string; cnt: number }[];
+  // byTheme ถูกนำออกจากหน้าแล้ว
 };
 
 type ActionStatus = "open" | "in_progress" | "done";
@@ -271,7 +271,8 @@ export default function DepartmentCommentsPage() {
   };
 
   const handleSubmitAction = async () => {
-    if (!canCreateAction || !dept || !draftAnswerId || !draftTitle.trim()) return;
+    if (!canCreateAction || !dept || !draftAnswerId || !draftTitle.trim())
+      return;
     try {
       setSavingAction(true);
       const res = await fetch("/api/comments/actions", {
@@ -348,7 +349,9 @@ export default function DepartmentCommentsPage() {
             <p className="mt-1 text-xs text-slate-500 flex items-center gap-1.5">
               <UserCircle className="size-3.5" />
               ผู้ใช้งาน:{" "}
-              <span className="font-medium text-slate-700">{me.username}</span>{" "}
+              <span className="font-medium text-slate-700">
+                {me.username}
+              </span>{" "}
               ({role})
             </p>
           )}
@@ -485,18 +488,6 @@ export default function DepartmentCommentsPage() {
                   <div className="text-[11px] text-slate-500 line-clamp-2">
                     {c.question_text}
                   </div>
-                  {c.themes.length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {c.themes.map((t) => (
-                        <span
-                          key={t}
-                          className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 ring-1 ring-sky-100"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  )}
 
                   {/* ปุ่มสร้างภารกิจ: เฉพาะ dept_head / admin */}
                   {canCreateAction && (
@@ -529,7 +520,7 @@ export default function DepartmentCommentsPage() {
                 ภารกิจการแก้ไขปัญหา
               </h2>
             </div>
-            <span className="text-xs text-slate-500">
+          <span className="text-xs text-slate-500">
               ทั้งหมด {actions.length} งาน
             </span>
           </div>
@@ -671,7 +662,9 @@ export default function DepartmentCommentsPage() {
                           className="rounded-md border px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-sky-500"
                         >
                           <option value="open">เปิด</option>
-                          <option value="in_progress">กำลังดำเนินการ</option>
+                          <option value="in_progress">
+                            กำลังดำเนินการ
+                          </option>
                           <option value="done">เสร็จสิ้น</option>
                         </select>
                       </div>

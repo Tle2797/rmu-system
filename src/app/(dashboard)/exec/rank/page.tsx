@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
-import GlobalFilters, { Filters } from "@/components/filters/GlobalFilters";
+import { Filters } from "@/components/filters/GlobalFilters";
 
 /** ---------- Types ---------- */
 type HeatRow = {
@@ -29,7 +29,7 @@ type RankRow = {
   score: number | null;
   answers: number;
   pct_high: number; // 0..1
-  pct_low: number;  // 0..1
+  pct_low: number; // 0..1
 };
 
 const PAGE_SIZE = 10;
@@ -52,7 +52,7 @@ export default function ExecRankPage() {
   const [rank, setRank] = useState<RankRow[]>([]);
   const [loadingRank, setLoadingRank] = useState(false);
 
-  // ✔ อ้างอิงตัวเลื่อนแนวนอน
+  // ✔ อ้างอิงตัวเลื่อนแนวนอน (ใช้กับ Heatmap)
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   // ✔ แบ่งหน้า Heatmap
@@ -68,7 +68,9 @@ export default function ExecRankPage() {
     const from = searchParams.get("from") || undefined;
     const to = searchParams.get("to") || undefined;
     const groups = searchParams.get("groups")?.split(",").filter(Boolean);
-    const departments = searchParams.get("departments")?.split(",").filter(Boolean);
+    const departments = searchParams.get("departments")
+      ?.split(",")
+      .filter(Boolean);
     const rating_min = searchParams.get("rating_min")
       ? Number(searchParams.get("rating_min"))
       : undefined;
@@ -79,7 +81,15 @@ export default function ExecRankPage() {
       ? Number(searchParams.get("survey_id"))
       : 1;
 
-    setFilters({ survey_id, from, to, groups, departments, rating_min, rating_max });
+    setFilters({
+      survey_id,
+      from,
+      to,
+      groups,
+      departments,
+      rating_min,
+      rating_max,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // ทำครั้งเดียว
 
@@ -89,9 +99,12 @@ export default function ExecRankPage() {
     if (filters.from) sp.set("from", filters.from);
     if (filters.to) sp.set("to", filters.to);
     if (filters.groups?.length) sp.set("groups", filters.groups.join(","));
-    if (filters.departments?.length) sp.set("departments", filters.departments.join(","));
-    if (filters.rating_min != null) sp.set("rating_min", String(filters.rating_min));
-    if (filters.rating_max != null) sp.set("rating_max", String(filters.rating_max));
+    if (filters.departments?.length)
+      sp.set("departments", filters.departments.join(","));
+    if (filters.rating_min != null)
+      sp.set("rating_min", String(filters.rating_min));
+    if (filters.rating_max != null)
+      sp.set("rating_max", String(filters.rating_max));
     sp.set("survey_id", String(filters.survey_id ?? 1));
     router.replace(`${pathname}?${sp.toString()}`);
   }, [filters, router, pathname]);
@@ -137,7 +150,9 @@ export default function ExecRankPage() {
         setMatrix({ questions, depts, map });
         setPage(1); // รีเซ็ตหน้าเมื่อข้อมูล/ฟิลเตอร์เปลี่ยน
         // รีเซ็ต scroll ไปซ้ายสุด
-        requestAnimationFrame(() => scrollerRef.current?.scrollTo({ left: 0, behavior: "auto" }));
+        requestAnimationFrame(() =>
+          scrollerRef.current?.scrollTo({ left: 0, behavior: "auto" })
+        );
       } catch (e) {
         if (!mounted) return;
         setErr("โหลด Heatmap ไม่สำเร็จ");
@@ -156,7 +171,9 @@ export default function ExecRankPage() {
     (async () => {
       try {
         setLoadingRank(true);
-        const rk = await axios.get<RankRow[]>("/api/exec/rank", { params: { ...filters } });
+        const rk = await axios.get<RankRow[]>("/api/exec/rank", {
+          params: { ...filters },
+        });
         if (!mounted) return;
         setRank(Array.isArray(rk.data) ? rk.data : []);
       } catch {
@@ -174,7 +191,8 @@ export default function ExecRankPage() {
   const avgMap = useMemo(() => {
     const m = new Map<string, number | null>();
     for (const d of matrix.depts) {
-      let sum = 0, cnt = 0;
+      let sum = 0,
+        cnt = 0;
       for (const q of matrix.questions) {
         const v = matrix.map.get(`${d.code}-${q.id}`);
         if (typeof v === "number") {
@@ -197,7 +215,6 @@ export default function ExecRankPage() {
       if (av == null) return 1;
       if (bv == null) return -1;
       if (bv !== av) return bv - av; // มากไปน้อย
-      // tie-breaker: ชื่อ ก-ฮ/ก-ฮ
       return a.name.localeCompare(b.name, "th");
     });
     return depts;
@@ -213,14 +230,14 @@ export default function ExecRankPage() {
   const headerHint = useMemo(() => {
     const qCount = matrix.questions.length;
     const dCount = matrix.depts.length;
-    return `หน่วยงาน ${dCount.toLocaleString()} หน่วยงาน × คำถาม ${qCount.toLocaleString()} ข้อ`;
+    return `หน่วยงาน ${dCount.toLocaleString()} หน่วยงาน · คำถาม ${qCount.toLocaleString()} ข้อ`;
   }, [matrix.questions.length, matrix.depts.length]);
 
-  // -------- ฟังก์ชันเลื่อนตาราง --------
+  // -------- ฟังก์ชันเลื่อนตาราง (ใช้กับคีย์บอร์ด เผื่อกรณีจอเล็กมาก) --------
   const scrollByCols = (dir: "left" | "right") => {
     const el = scrollerRef.current;
     if (!el) return;
-    const step = 8 * 72; // เลื่อนทีละ ~8 คอลัมน์ (คอลัมน์ละ ~72px)
+    const step = 6 * 64;
     el.scrollBy({ left: dir === "left" ? -step : step, behavior: "smooth" });
   };
 
@@ -250,7 +267,10 @@ export default function ExecRankPage() {
   };
 
   // -------- เตรียม Top 5 / Bottom 5 --------
-  const top5 = useMemo(() => rank.filter((r) => r.score != null).slice(0, 5), [rank]);
+  const top5 = useMemo(
+    () => rank.filter((r) => r.score != null).slice(0, 5),
+    [rank]
+  );
   const bottom5 = useMemo(() => {
     const arr = rank.filter((r) => r.score != null);
     return arr.slice(-5).reverse();
@@ -260,115 +280,133 @@ export default function ExecRankPage() {
   const goPage = (p: number) => {
     const next = Math.min(Math.max(1, p), totalPages);
     setPage(next);
-    // รีเซ็ต scroll แนวนอนเมื่อเปลี่ยนหน้า
-    requestAnimationFrame(() => scrollerRef.current?.scrollTo({ left: 0, behavior: "auto" }));
+    requestAnimationFrame(() =>
+      scrollerRef.current?.scrollTo({ left: 0, behavior: "auto" })
+    );
   };
 
+  const surveyIdLabel = filters.survey_id ?? 1;
+
   return (
-    <div className="max-w-[1200px] mx-auto p-4 space-y-6">
-      {/* หัวเรื่อง */}
-      <header>
-        <h1 className="text-xl font-semibold">จัดอันดับหน่วยงาน & Heatmap</h1>
-        <p className="text-slate-600 text-sm">Heatmap (หน่วยงาน × คำถาม) — {headerHint}</p>
+    <div className="max-w-6xl mx-auto p-4 space-y-6">
+      {/* ---------- Header ---------- */}
+      <header className="rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-sky-50 to-blue-100 p-6 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+              ภาพรวมการจัดอันดับหน่วยงาน
+            </h1>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 font-medium shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              {matrix.depts.length.toLocaleString()} หน่วยงาน
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 text-amber-800 px-3 py-1 font-medium shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              {matrix.questions.length.toLocaleString()} คำถาม
+            </span>
+          </div>
+        </div>
       </header>
 
-      {/* ฟิลเตอร์กลาง */}
-      <GlobalFilters value={filters} onChange={setFilters} />
-
-      {/* HEATMAP */}
-      <section className="relative rounded-2xl border bg-white">
-        {/* Header */}
-        <div className="p-3 border-b bg-slate-50 flex items-center justify-between rounded-t-2xl">
+      {/* ---------- HEATMAP ---------- */}
+      <section className="relative rounded-2xl border border-slate-200 bg-slate-50/60 shadow-sm">
+        {/* Header ของการ์ด Heatmap */}
+        <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b bg-white/80 px-4 py-3 backdrop-blur">
           <div>
-            <div className="font-medium">Heatmap (หน่วยงาน × คำถาม)</div>
-            <p className="text-xs text-slate-500">
-              คลิกเซลล์เพื่อกรองเฉพาะหน่วยงานนั้น • แสดงหน่วยงาน {startIdx + 1}-{endIdx} จากทั้งหมด {sortedDepts.length}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => scrollByCols("left")}
-              className="px-2 py-1.5 text-sm rounded-lg border hover:bg-slate-50"
-            >
-              ← เลื่อน
-            </button>
-            <button
-              onClick={() => scrollByCols("right")}
-              className="px-2 py-1.5 text-sm rounded-lg border hover:bg-slate-50"
-            >
-              เลื่อน →
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-sky-700 text-xs">
+                ☷
+              </span>
+              <h2 className="text-sm font-semibold text-slate-800">
+                Heatmap คะแนนเฉลี่ย (หน่วยงาน × คำถาม)
+              </h2>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{headerHint}</p>
           </div>
         </div>
 
         <div className="relative">
-          {/* เงา gradient ฝั่งขวา (สวยงาม) */}
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent z-20 rounded-br-2xl" />
-
-          <div ref={scrollerRef} className="overflow-x-auto">
+          <div
+            ref={scrollerRef}
+            className="overflow-x-auto lg:overflow-x-visible"
+          >
             {loading ? (
               <HeatmapSkeleton />
             ) : (
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_rgba(0,0,0,0.06)]">
-                  <tr className="border-b">
-                    <th className="sticky left-0 z-20 bg-white p-2 text-left w-[260px]">
+              <table className="w-full text-[11px] lg:text-xs table-fixed">
+                <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur shadow-[0_1px_0_rgba(15,23,42,0.08)]">
+                  <tr className="border-b border-slate-200">
+                    <th className="sticky left-0 z-20 bg-slate-50/95 p-2 pl-3 text-left w-[210px] text-[11px] font-semibold text-slate-700 align-bottom">
                       หน่วยงาน \ คำถาม
                     </th>
                     {matrix.questions.map((q) => (
                       <th
                         key={q.id}
-                        className="p-2 text-center w-[72px] min-w-[72px] max-w-[72px]"
+                        className="p-1 text-center w-[80px] min-w-[70px] max-w-[90px] align-bottom"
                       >
-                        <div className="font-medium">Q{q.id}</div>
-                        <div className="text-[11px] text-slate-500 truncate" title={q.text}>
+                        <div
+                          className="text-[10px] leading-tight text-slate-700 line-clamp-3"
+                          title={q.text}
+                        >
                           {q.text}
                         </div>
                       </th>
                     ))}
-                    <th className="p-2 text-center w-[88px] min-w-[88px] max-w-[88px] bg-slate-50">
+                    <th className="p-1 text-center w-[70px] min-w-[70px] max-w-[72px] bg-slate-100 text-[11px] font-semibold text-slate-700 align-bottom">
                       เฉลี่ย
                     </th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {pagedDepts.map((d) => {
-                    const avg = avgMap.get(d.code) ?? null; // ✅ ใช้ avgMap
+                  {pagedDepts.map((d, rowIndex) => {
+                    const avg = avgMap.get(d.code) ?? null;
+                    const rowBg =
+                      rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50/80";
                     return (
-                      <tr key={d.code} className="border-b last:border-0">
-                        <td className="sticky left-0 z-10 bg-white p-2 pr-6">
+                      <tr
+                        key={d.code}
+                        className={`border-b border-slate-100 last:border-0 ${rowBg}`}
+                      >
+                        <td className="sticky left-0 z-10 bg-inherit px-3 py-2">
                           <a
                             href={`/dashboard/${d.code}`}
-                            className="font-medium text-blue-600 hover:underline"
+                            className="font-medium text-[11px] lg:text-xs text-slate-800 hover:text-sky-700 hover:underline"
                             title={`เปิดแดชบอร์ดของ ${d.name}`}
                           >
                             {d.name}
                           </a>
-                          <div className="text-xs text-slate-500">{d.code}</div>
                         </td>
 
                         {matrix.questions.map((q) => {
                           const val = matrix.map.get(`${d.code}-${q.id}`);
+                          const displayVal =
+                            typeof val === "number" ? val.toFixed(2) : "-";
                           return (
-                            <td key={q.id} className="p-2 text-center">
+                            <td key={q.id} className="p-1 text-center">
                               <button
-                                title={`${d.name} • Q${q.id} • ${q.text} = ${val ?? "-"}`}
+                                title={`${d.name} • ${q.text} = ${displayVal}`}
                                 onClick={() => onCellClick(d.code, q.id)}
-                                className={`w-[64px] h-[40px] rounded-lg ${cellBg(val)} 
-                                  border border-black/5 shadow-sm 
-                                  hover:scale-[1.03] transition-transform`}
+                                className={`w-full min-w-[60px] h-[34px] rounded-md ${cellBg(
+                                  val ?? null
+                                )} border border-black/5 shadow-sm 
+                                  hover:scale-[1.02] hover:border-slate-400/60 transition-transform`}
                               >
-                                <span className="font-medium">{val ?? "-"}</span>
+                                <span className="font-semibold text-[11px]">
+                                  {displayVal}
+                                </span>
                               </button>
                             </td>
                           );
                         })}
 
-                        <td className="p-2 text-center bg-slate-50">
+                        <td className="p-1 text-center bg-slate-100">
                           <a
                             href={`/dashboard/${d.code}`}
-                            className="inline-flex items-center justify-center w-[72px] h-[40px] rounded-lg bg-blue-50 text-blue-700 font-semibold border border-blue-100 hover:bg-blue-100"
+                            className="inline-flex items-center justify-center w-full min-w-[64px] h-[34px] rounded-md bg-sky-50 text-sky-800 text-[11px] font-semibold border border-sky-100 hover:bg-sky-100"
                             title={`เปิดแดชบอร์ดของ ${d.name}`}
                           >
                             {avg == null ? "-" : avg.toFixed(2)}
@@ -381,10 +419,10 @@ export default function ExecRankPage() {
                   {!loading && !pagedDepts.length && (
                     <tr>
                       <td
-                        className="p-3 text-slate-500"
+                        className="p-4 text-sm text-slate-500 text-center"
                         colSpan={1 + matrix.questions.length + 1}
                       >
-                        ไม่มีข้อมูล
+                        ไม่มีข้อมูลตามเงื่อนไขที่เลือก
                       </td>
                     </tr>
                   )}
@@ -394,78 +432,80 @@ export default function ExecRankPage() {
           </div>
         </div>
 
-        {/* Legend + Pagination */}
-        <div className="p-3 border-t bg-white rounded-b-2xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            <span>Legend:</span>
-            <LegendChip label="≤ 2.9" className="bg-red-200 text-red-900" />
-            <LegendChip label="3.0 – 3.49" className="bg-amber-200 text-amber-900" />
-            <LegendChip label="3.5 – 3.99" className="bg-yellow-200 text-yellow-900" />
-            <LegendChip label="4.0 – 4.49" className="bg-green-200 text-green-900" />
-            <LegendChip label="≥ 4.5" className="bg-emerald-200 text-emerald-900" />
-          </div>
-
-          {/* Pagination Controls */}
+        {/* Footer: Pagination */}
+        <div className="flex flex-col items-center justify-between gap-2 border-t bg-white/90 px-4 py-3 rounded-b-2xl sm:flex-row">
+          <p className="text-xs text-slate-500">
+            ทั้งหมด{" "}
+            <span className="font-semibold text-slate-700">
+              {sortedDepts.length.toLocaleString()}
+            </span>{" "}
+            หน่วยงาน · หน้าที่{" "}
+            <span className="font-semibold text-slate-700">{page}</span> /{" "}
+            {totalPages}
+          </p>
           <div className="flex items-center gap-2 text-sm">
             <button
               onClick={() => goPage(page - 1)}
               disabled={page <= 1}
-              className="px-3 py-1.5 rounded-lg border disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
             >
-              ก่อนหน้า
+              ‹ ก่อนหน้า
             </button>
-            <div className="px-2">
-              หน้า <span className="font-semibold">{page}</span> / {totalPages}
-            </div>
+            <span className="text-xs text-slate-600">
+              หน้า <span className="font-semibold">{page}</span> จาก{" "}
+              {totalPages}
+            </span>
             <button
               onClick={() => goPage(page + 1)}
               disabled={page >= totalPages}
-              className="px-3 py-1.5 rounded-lg border disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
             >
-              ถัดไป
+              ถัดไป ›
             </button>
           </div>
         </div>
       </section>
 
-      {/* TOP / BOTTOM */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <RankTable title="TOP 5 หน่วยงาน" rows={top5} highlight="top" loading={loadingRank} />
+      {/* ---------- TOP / BOTTOM Ranking ---------- */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <RankTable
+          title="TOP 5 หน่วยงาน"
+          subtitle="หน่วยงานที่มีคะแนนเฉลี่ยสูงสุด"
+          rows={top5}
+          highlight="top"
+          loading={loadingRank}
+        />
         <RankTable
           title="BOTTOM 5 หน่วยงาน"
+          subtitle="หน่วยงานที่ควรติดตามและเร่งปรับปรุง"
           rows={bottom5}
           highlight="bottom"
           loading={loadingRank}
         />
       </section>
 
-      {err && <p className="text-sm text-red-600">{err}</p>}
+      {err && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+          {err}
+        </p>
+      )}
     </div>
-  );
-}
-
-/** ---------- Legend ---------- */
-function LegendChip({ label, className }: { label: string; className: string }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-2 px-2 py-1 rounded-lg border border-black/5 ${className}`}
-    >
-      <span className="inline-block w-3 h-3 rounded-sm bg-black/20 mix-blend-multiply" />
-      {label}
-    </span>
   );
 }
 
 /** ---------- Loading Skeleton ---------- */
 function HeatmapSkeleton() {
   return (
-    <div className="p-3">
+    <div className="p-4">
       <div className="space-y-2">
-        {[...Array(8)].map((_, r) => (
+        {[...Array(7)].map((_, r) => (
           <div key={r} className="flex gap-2">
-            <div className="h-10 w-64 bg-slate-100 animate-pulse rounded-md" />
-            {[...Array(10)].map((__, c) => (
-              <div key={c} className="h-10 w-16 bg-slate-100 animate-pulse rounded-md" />
+            <div className="h-9 w-52 bg-slate-100 animate-pulse rounded-md" />
+            {[...Array(8)].map((__, c) => (
+              <div
+                key={c}
+                className="h-9 w-14 bg-slate-100 animate-pulse rounded-md"
+              />
             ))}
           </div>
         ))}
@@ -477,79 +517,110 @@ function HeatmapSkeleton() {
 /** ---------- Rank Table ---------- */
 function RankTable({
   title,
+  subtitle,
   rows,
   highlight,
   loading,
 }: {
   title: string;
+  subtitle?: string;
   rows: RankRow[];
   highlight: "top" | "bottom";
   loading?: boolean;
 }) {
   return (
-    <div className="rounded-xl border bg-white overflow-hidden">
-      <div className="p-3 border-b bg-slate-50 font-medium">{title}</div>
-      <div className="overflow-x-auto">
-        <table className="min-w-[680px] w-full text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="p-2 text-left w-10">#</th>
-              <th className="p-2 text-left">หน่วยงาน</th>
-              <th className="p-2 text-right">คะแนนเฉลี่ย</th>
-              <th className="p-2 text-right">จำนวนคำตอบ</th>
-              <th className="p-2 text-right">% สูง</th>
-              <th className="p-2 text-right">% ต่ำ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td className="p-3 text-slate-500" colSpan={6}>
-                  กำลังโหลด…
-                </td>
-              </tr>
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b bg-slate-50/80 px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+            {subtitle && (
+              <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>
             )}
-            {!loading &&
-              rows.map((r, i) => {
-                const hi = Math.round((r.pct_high || 0) * 100);
-                const lo = Math.round((r.pct_low || 0) * 100);
-                const badge =
-                  highlight === "top" && i < 3
-                    ? ["🥇", "🥈", "🥉"][i]
-                    : highlight === "bottom" && i < 3
-                    ? "⚠️"
-                    : null;
-
-                return (
-                  <tr key={r.department_code} className="border-b last:border-0">
-                    <td className="p-2">{i + 1}</td>
-                    <td className="p-2">
-                      <a
-                        href={`/dashboard/${r.department_code}`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        {r.department_name}
-                      </a>{" "}
-                      <span className="text-xs text-slate-500">({r.department_code})</span>{" "}
-                      {badge && <span className="ml-1">{badge}</span>}
-                    </td>
-                    <td className="p-2 text-right">{(r.score ?? 0).toFixed(2)}</td>
-                    <td className="p-2 text-right">{r.answers.toLocaleString()}</td>
-                    <td className="p-2 text-right">{hi}%</td>
-                    <td className="p-2 text-right">{lo}%</td>
-                  </tr>
-                );
-              })}
-            {!loading && !rows.length && (
-              <tr>
-                <td className="p-3 text-slate-500" colSpan={6}>
-                  ไม่มีข้อมูล
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+          </div>
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+            {rows.length} หน่วยงาน
+          </span>
+        </div>
       </div>
+
+      {/* ✅ ตารางจัดพอดีกล่อง ไม่ต้องเลื่อนแนวนอน */}
+      <table className="w-full table-fixed text-[11px] sm:text-xs">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50/80">
+            <th className="w-[10%] p-2 text-left text-[11px] font-semibold text-slate-600">
+              #
+            </th>
+            <th className="w-[50%] p-2 text-left text-[11px] font-semibold text-slate-600">
+              หน่วยงาน
+            </th>
+            <th className="w-[20%] p-2 text-right text-[11px] font-semibold text-slate-600">
+              คะแนนเฉลี่ย
+            </th>
+            <th className="w-[20%] p-2 text-right text-[11px] font-semibold text-slate-600">
+              จำนวนคำตอบ
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading && (
+            <tr>
+              <td className="p-3 text-slate-500 text-center" colSpan={4}>
+                กำลังโหลด…
+              </td>
+            </tr>
+          )}
+          {!loading &&
+            rows.map((r, i) => {
+              const badge =
+                highlight === "top" && i < 3
+                  ? ["🥇", "🥈", "🥉"][i]
+                  : highlight === "bottom" && i < 3
+                  ? "⚠️"
+                  : null;
+
+              const scoreColor =
+                (r.score ?? 0) >= 4.0
+                  ? "text-emerald-600"
+                  : (r.score ?? 0) >= 3.0
+                  ? "text-amber-600"
+                  : "text-red-600";
+
+              return (
+                <tr
+                  key={r.department_code}
+                  className="border-b last:border-0 border-slate-100 hover:bg-slate-50/70 transition-colors"
+                >
+                  <td className="p-2 text-[11px] text-slate-600">{i + 1}</td>
+                  <td className="p-2">
+                    <a
+                      href={`/dashboard/${r.department_code}`}
+                      className="text-[11px] sm:text-sm text-slate-800 hover:text-sky-700 hover:underline"
+                    >
+                      {r.department_name}
+                    </a>
+                    {badge && <span className="ml-1">{badge}</span>}
+                  </td>
+                  <td className="p-2 text-right">
+                    <span className={`text-[11px] sm:text-sm font-semibold ${scoreColor}`}>
+                      {(r.score ?? 0).toFixed(2)}
+                    </span>
+                  </td>
+                  <td className="p-2 text-right text-[11px] text-slate-700">
+                    {r.answers.toLocaleString()}
+                  </td>
+                </tr>
+              );
+            })}
+          {!loading && !rows.length && (
+            <tr>
+              <td className="p-3 text-slate-500 text-center" colSpan={4}>
+                ไม่มีข้อมูล
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

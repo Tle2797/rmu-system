@@ -1,41 +1,51 @@
+// src/app/(dashboard)/exec/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
-import GlobalFilters, { Filters } from "@/components/filters/GlobalFilters";
-import { toThaiDisplay } from "@/server/utils/date";
+import { motion } from "framer-motion";
 import {
-  ResponsiveContainer,
+  LayoutDashboard,
+  TrendingUp,
+  BarChart3,
+  LineChart as LineChartIcon,
+  MessageCircle,
+  Smile,
+  Meh,
+  Frown,
+  Users,
+  Building2,
+} from "lucide-react";
+import {
   BarChart,
   Bar,
   CartesianGrid,
   XAxis,
   YAxis,
-  Tooltip,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
-  ComposedChart,
-  Area,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  LineChart,
   Line,
 } from "recharts";
-import { Download, ExternalLink, Search as SearchIcon, X as XIcon, RefreshCcw } from "lucide-react";
 
-/* ----------------- Types ----------------- */
+/* ========= Types ========= */
+
 type Overview = {
   departments_count: number;
   surveys_count: number;
   questions_count: number;
   responses_count: number;
   avg_score: number | null;
-  pct_high: number;
-  pct_low: number;
+  pct_high: number; // 0..1
+  pct_low: number;  // 0..1
 };
-type Participation = { total_responses: number; with_comments: number; negative_comments: number; actions_created: number };
-type RatingDistribution = { r1: number; r2: number; r3: number; r4: number; r5: number };
-type TrendPoint = { bucket: string; avg_rating: number | null; answers: number };
-type TrendGroup = "day" | "month" | "year";
+
+type Participation = {
+  total_responses: number;
+  with_comments: number;
+  negative_comments: number;
+  actions_created: number;
+};
+
 type RankRow = {
   department_code: string;
   department_name: string;
@@ -45,528 +55,467 @@ type RankRow = {
   pct_low: number;
 };
 
-/* ----------------- Page ----------------- */
-export default function ExecHomePage() {
-  const [filters, setFilters] = useState<Filters>({ survey_id: 1 });
+type TrendPoint = {
+  bucket: string; // YYYY-MM
+  avg_rating: number | null;
+  answers: number;
+};
 
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [dist, setDist] = useState<RatingDistribution | null>(null);
-  const [trend, setTrend] = useState<TrendPoint[]>([]);
-  const [trendGroup, setTrendGroup] = useState<TrendGroup>("month");
-  const [rank, setRank] = useState<RankRow[]>([]);
+type CommentSummary = {
+  bySent: { sentiment: "positive" | "neutral" | "negative"; cnt: number }[];
+  byTheme: { theme: string; cnt: number }[];
+};
 
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
+/* ========= Helpers ========= */
 
-  // หน่วยงานทั้งหมด: ค้นหา + แบ่งหน้า
-  const [deptSearch, setDeptSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  useEffect(() => setPage(1), [filters]);
+function evaluateGrade(avg?: number | null) {
+  const s = typeof avg === "number" ? avg : 0;
+  if (s >= 0 && s <= 1.0) return { label: "เกณฑ์ต่ำที่สุด", key: "lowest" } as const;
+  if (s > 1.0 && s <= 2.0) return { label: "เกณฑ์ต่ำ", key: "low" } as const;
+  if (s > 2.0 && s <= 3.0) return { label: "เกณฑ์ปานกลาง", key: "mid" } as const;
+  if (s > 3.0 && s <= 4.0) return { label: "เกณฑ์ดี", key: "good" } as const;
+  if (s > 4.0 && s <= 5.0) return { label: "เกณฑ์ดีมาก", key: "vgood" } as const;
+  return { label: "-", key: "na" } as const;
+}
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setErr("");
-        setLoading(true);
-        const params = { ...filters };
-        const [ov, rd, tr, rk] = await Promise.all([
-          axios.get("/api/exec/overview", { params }),
-          axios.get("/api/exec/rating-distribution", { params }),
-          axios.get("/api/exec/trend", { params: { ...params, group: trendGroup } }),
-          axios.get("/api/exec/rank", { params }),
-        ]);
-        if (!mounted) return;
-        setOverview(ov.data || null);
-        setDist(rd.data || null);
-        setTrend(Array.isArray(tr.data) ? tr.data : []);
-        setRank(Array.isArray(rk.data) ? rk.data : []);
-      } catch {
-        if (!mounted) return;
-        setErr("โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [filters, trendGroup]);
+function gradeBadgeClass(key: string) {
+  const base =
+    "inline-flex px-3 py-1 rounded-full text-xs md:text-sm ring-1 font-medium transition-all duration-200";
+  switch (key) {
+    case "lowest":
+      return `${base} bg-red-100 text-red-700 ring-red-200`;
+    case "low":
+      return `${base} bg-orange-100 text-orange-700 ring-orange-200`;
+    case "mid":
+      return `${base} bg-yellow-100 text-yellow-800 ring-yellow-200`;
+    case "good":
+      return `${base} bg-green-100 text-green-700 ring-green-200`;
+    case "vgood":
+      return `${base} bg-emerald-100 text-emerald-700 ring-emerald-200`;
+    default:
+      return `${base} bg-gray-100 text-gray-700 ring-gray-200`;
+  }
+}
 
-  // KPI
-  const kpi = useMemo(() => {
-    if (!overview) return null;
-    const avg = typeof overview.avg_score === "number" ? overview.avg_score : 0;
-    const hi = Math.round((overview.pct_high || 0) * 100);
-    return {
-      avg,
-      hi,
-      responses: overview.responses_count || 0,
-      departments: overview.departments_count || 0,
-      questions: overview.questions_count || 0,
-      surveys: overview.surveys_count || 0,
-    };
-  }, [overview]);
+const n = (v: unknown) => (v == null ? 0 : Number(v) || 0);
 
-  // Dist
-  const totalDist = useMemo(() => (!dist ? 0 : dist.r1 + dist.r2 + dist.r3 + dist.r4 + dist.r5), [dist]);
-  const distData = useMemo(
-    () => [
-      { name: "1 ดาว", value: dist?.r1 ?? 0 },
-      { name: "2 ดาว", value: dist?.r2 ?? 0 },
-      { name: "3 ดาว", value: dist?.r3 ?? 0 },
-      { name: "4 ดาว", value: dist?.r4 ?? 0 },
-      { name: "5 ดาว", value: dist?.r5 ?? 0 },
-    ],
-    [dist]
-  );
+/* ========= Custom Tooltip ========= */
 
-  const COLORS = ["#ef4444", "#f59e0b", "#eab308", "#22c55e", "#16a34a"];
-  const BLUE = "#2563eb";
-  const SLATE = "#475569";
-
-  const formatBucket = (bucket: string, group: TrendGroup) => {
-    if (!bucket) return "-";
-    if (group === "day") return toThaiDisplay(bucket);
-    if (group === "month") {
-      const [y, m] = bucket.split("-");
-      return `${m}/${y}`;
-    }
-    return bucket;
-  };
-
-  // หน่วยงานทั้งหมด (ค้นหา + แบ่งหน้า)
-  const filteredAll = useMemo(() => {
-    const q = deptSearch.trim().toLowerCase();
-    const rows = q
-      ? rank.filter(
-          (r) => r.department_name.toLowerCase().includes(q) || r.department_code.toLowerCase().includes(q)
-        )
-      : rank;
-    const start = (page - 1) * pageSize;
-    return {
-      total: rows.length,
-      pages: Math.max(1, Math.ceil(rows.length / pageSize)),
-      rowsAll: rows,
-      rows: rows.slice(start, start + pageSize),
-    };
-  }, [rank, deptSearch, page, pageSize]);
-
-  const changePage = (to: number) => setPage(Math.max(1, Math.min(to, filteredAll.pages)));
-
-  // ---------- Export ----------
-  const fileDate = new Date().toISOString().slice(0, 10);
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  const csvEscape = (v: unknown) => {
-    const s = String(v ?? "");
-    const needsQuote = /[",\r\n]/.test(s);
-    const escaped = s.replace(/"/g, '""');
-    return needsQuote ? `"${escaped}"` : escaped;
-  };
-  const exportAllCSV = () => {
-    const headers = ["ลำดับ", "รหัสหน่วยงาน", "ชื่อหน่วยงาน", "คะแนนเฉลี่ย", "จำนวนคำตอบ", "% สูง (4–5)", "% ต่ำ (1–2)"];
-    const lines = [headers.join(",")];
-    filteredAll.rowsAll.forEach((r, i) => {
-      const score = r.score ?? 0;
-      const hi = Math.round((r.pct_high || 0) * 100);
-      const lo = Math.round((r.pct_low || 0) * 100);
-      lines.push(
-        [
-          csvEscape(i + 1),
-          csvEscape(r.department_code),
-          csvEscape(r.department_name),
-          csvEscape(score.toFixed(2)),
-          csvEscape(r.answers),
-          csvEscape(`${hi}%`),
-          csvEscape(`${lo}%`),
-        ].join(",")
-      );
-    });
-    const csvContent = "\uFEFF" + lines.join("\r\n");
-    downloadBlob(new Blob([csvContent], { type: "text/csv;charset=utf-8;" }), `exec_all-departments_${fileDate}.csv`);
-  };
-  const exportAllXLSX = async () => {
-    try {
-      const XLSX: any = await import("xlsx");
-      const data = filteredAll.rowsAll.map((r, i) => {
-        const score = r.score ?? 0;
-        const hi = Math.round((r.pct_high || 0) * 100);
-        const lo = Math.round((r.pct_low || 0) * 100);
-        return {
-          ลำดับ: i + 1,
-          รหัสหน่วยงาน: r.department_code,
-          ชื่อหน่วยงาน: r.department_name,
-          คะแนนเฉลี่ย: Number(score.toFixed(2)),
-          จำนวนคำตอบ: r.answers,
-          "% สูง (4–5)": hi,
-          "% ต่ำ (1–2)": lo,
-        };
-      });
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "All Departments");
-      XLSX.writeFile(wb, `exec_all-departments_${fileDate}.xlsx`);
-    } catch {
-      exportAllCSV();
-    }
-  };
-  const onExportAll = () => exportAllXLSX();
-
+function RankTooltip({ active, payload }: any) {
+  if (!active || !payload || !payload.length) return null;
+  const row = payload[0].payload as RankRow & { gradeLabel?: string };
   return (
-    <div className="min-h-[100dvh] bg-gradient-to-b from-sky-50 via-white to-white">
-      <div className="mx-auto max-w-7xl px-4 pb-10 pt-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <header className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="rounded-lg border bg-white px-3 py-2 text-xs shadow-md">
+      <div className="font-semibold text-slate-800">{row.department_name}</div>
+      <div className="mt-1 space-y-0.5">
+        <div>คะแนนเฉลี่ย: {row.score != null ? Number(row.score).toFixed(2) : "-"}</div>
+        <div>จำนวนคำตอบ: {row.answers}</div>
+        {row.gradeLabel && (
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">ภาพรวมมหาวิทยาลัย</h1>
-            <p className="mt-1 text-sm text-slate-600">สรุปภาพรวมทุกหน่วยงาน — ปรับช่วงเวลา/กลุ่ม/ช่วงคะแนนเพื่อวิเคราะห์เชิงลึก</p>
+            ผลการประเมิน:{" "}
+            <span className={gradeBadgeClass(evaluateGrade(row.score).key)}>{row.gradeLabel}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700 ring-1 ring-sky-200">Exec Dashboard</span>
-          </div>
-        </header>
-
-        {/* Filters */}
-        <div className="rounded-2xl border border-sky-100 bg-white/70 p-3 backdrop-blur-sm ring-1 ring-white/50">
-          <GlobalFilters value={filters} onChange={setFilters} />
-        </div>
-
-        {/* Error */}
-        {err && <ErrorAlert message={err} />}
-
-        {/* KPIs — สไตล์เข้ากับหัวตาราง */}
-        <section className="mt-4">
-          {loading && !kpi ? (
-            <KpiSkeleton />
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              <KpiCard title="หน่วยงานที่มีข้อมูล" value={kpi?.departments ?? "-"} icon="🏛️" />
-              <KpiCard title="แบบสอบถาม" value={kpi?.surveys ?? "-"} icon="📋" />
-              <KpiCard title="จำนวนคำถาม" value={kpi?.questions ?? "-"} icon="❓" />
-              <KpiCard title="ผู้ทำแบบประเมิน" value={(kpi?.responses ?? 0).toLocaleString()} icon="👥" />
-              <KpiCard title="คะแนนเฉลี่ยรวม" value={kpi ? kpi.avg.toFixed(2) : "-"} icon="⭐" emphasize />
-              <KpiCard title="% สูง (4–5)" value={kpi ? `${kpi.hi}%` : "-"} icon="📈" />
-            </div>
-          )}
-        </section>
-
-        {/* Distribution — การ์ด/เฮดเดอร์สไตล์เดียวกับตารางหลัก */}
-        <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <ChartCard
-            title="การกระจายคะแนน (แท่ง)"
-            loading={loading && !dist}
-            onRefresh={() => setFilters({ ...filters })}
-          >
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={distData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" stroke={SLATE} />
-                <YAxis allowDecimals={false} stroke={SLATE} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="value" name="จำนวน" fill={BLUE} radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="mt-2 text-xs text-slate-500">
-              รวมทั้งหมด: <span className="font-medium">{totalDist.toLocaleString()}</span> ครั้ง
-            </div>
-          </ChartCard>
-
-          <ChartCard title="การกระจายคะแนน (วงกลม)" loading={loading && !dist}>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Tooltip />
-                <Legend />
-                <Pie data={distData} dataKey="value" nameKey="name" outerRadius={100} label>
-                  {distData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartCard>
-        </section>
-
-        {/* Trend — เฮดเดอร์/ขอบ/ปุ่มให้เข้าชุด */}
-        <section className="mt-4 rounded-2xl border border-sky-100 bg-white overflow-hidden">
-          <div className="flex items-center justify-between gap-3 border-b border-sky-200 bg-gradient-to-r from-sky-50 to-sky-100 px-3 py-2">
-            <div className="font-medium text-slate-900">เทรนด์คะแนนเฉลี่ย & จำนวนคำตอบ</div>
-            <div className="flex items-center gap-2">
-              <Segmented
-                value={trendGroup}
-                onChange={(v) => setTrendGroup(v as TrendGroup)}
-                options={[{ label: "รายวัน", value: "day" }, { label: "รายเดือน", value: "month" }]}
-              />
-              <button
-                onClick={() => setFilters({ ...filters })}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 px-2 py-1 text-xs text-slate-700 hover:bg-sky-50"
-                title="รีเฟรช"
-              >
-                <RefreshCcw className="h-3.5 w-3.5" />
-                รีเฟรช
-              </button>
-            </div>
-          </div>
-          <div className="p-3">
-            {loading && !trend.length ? (
-              <ChartSkeleton height={320} />
-            ) : (
-              <ResponsiveContainer width="100%" height={320}>
-                <ComposedChart data={trend}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="bucket" stroke={SLATE} tickFormatter={(v: string) => formatBucket(v, trendGroup)} />
-                  <YAxis yAxisId="left" domain={[0, 5]} allowDecimals={false} stroke={SLATE} label={{ value: "คะแนนเฉลี่ย", angle: -90, position: "insideLeft" }} />
-                  <YAxis yAxisId="right" orientation="right" allowDecimals={false} stroke={SLATE} label={{ value: "จำนวนคำตอบ", angle: 90, position: "insideRight" }} />
-                  <Tooltip labelFormatter={(v) => formatBucket(String(v), trendGroup)} />
-                  <Legend />
-                  <Area yAxisId="right" type="monotone" dataKey={(d: TrendPoint) => Number(d.answers)} name="จำนวนคำตอบ" fill="#c7d2fe" stroke="#6366f1" />
-                  <Line yAxisId="left" type="monotone" dataKey={(d: TrendPoint) => (typeof d.avg_rating === "number" ? d.avg_rating : Number(d.avg_rating) || 0)} name="คะแนนเฉลี่ย" stroke="#0ea5e9" strokeWidth={2.2} dot={{ r: 2.5 }} activeDot={{ r: 4 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </section>
-
-        {/* หน่วยงานทั้งหมด — อ้างอิงโทนหลัก */}
-        <section className="mt-6 rounded-2xl border border-sky-100 bg-white overflow-hidden">
-          <div className="flex flex-col gap-2 border-b border-sky-200 bg-gradient-to-r from-sky-50 to-sky-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="font-medium text-slate-900">หน่วยงานทั้งหมด</div>
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Search */}
-              <div className="relative">
-                <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  className="w-[240px] rounded-lg border border-sky-300 bg-white pl-8 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
-                  placeholder="ค้นหา (รหัส/ชื่อหน่วยงาน)"
-                  value={deptSearch}
-                  onChange={(e) => { setDeptSearch(e.target.value); setPage(1); }}
-                />
-                {deptSearch && (
-                  <button
-                    onClick={() => setDeptSearch("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-600"
-                    aria-label="ล้างคำค้นหา"
-                  >
-                    <XIcon className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              {/* Page size */}
-              <select
-                className="rounded-lg border border-sky-300 bg-white p-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
-                value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              >
-                {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} แถว/หน้า</option>)}
-              </select>
-
-              {/* Export */}
-              <button
-                onClick={onExportAll}
-                className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm text-white hover:bg-sky-700"
-                title="ส่งออกข้อมูลทั้งหมด (ตามการค้นหาปัจจุบัน) เป็น Excel"
-              >
-                <Download className="h-4 w-4" />
-                ส่งออก Excel
-              </button>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-[860px] w-full text-sm">
-              <thead className="bg-gradient-to-r from-sky-50 to-sky-100 border-b border-sky-200">
-                <tr>
-                  <th className="p-2 text-left w-20 font-semibold text-slate-800">ลำดับ</th>
-                  <th className="p-2 text-left font-semibold text-slate-800">หน่วยงาน</th>
-                  <th className="p-2 text-right font-semibold text-slate-800">คะแนนเฉลี่ย</th>
-                  <th className="p-2 text-right font-semibold text-slate-800">จำนวนคำตอบ</th>
-                  <th className="p-2 text-right font-semibold text-slate-800">% สูง (4–5)</th>
-                  <th className="p-2 text-right font-semibold text-slate-800">% ต่ำ (1–2)</th>
-                  <th className="p-2 text-right w-28 font-semibold text-slate-800">เปิดดู</th>
-                </tr>
-              </thead>
-              <tbody className="[&>tr:nth-child(even)]:bg-sky-50/30">
-                {filteredAll.rows.map((r, i) => {
-                  const idx = (page - 1) * pageSize + i + 1;
-                  const score = r.score ?? 0;
-                  const hi = Math.round((r.pct_high || 0) * 100);
-                  const lo = Math.round((r.pct_low || 0) * 100);
-                  return (
-                    <tr key={r.department_code} className="border-b border-slate-100 hover:bg-sky-50 transition-colors">
-                      <td className="p-2">{idx}</td>
-                      <td className="p-2">
-                        <div className="font-medium text-slate-800">{r.department_name}</div>
-                        <div className="text-xs text-slate-500">{r.department_code}</div>
-                      </td>
-                      <td className="p-2 text-right">{score.toFixed(2)}</td>
-                      <td className="p-2 text-right">{r.answers.toLocaleString()}</td>
-                      <td className="p-2 text-right">
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 ring-1 ring-emerald-200 text-xs">{hi}%</span>
-                      </td>
-                      <td className="p-2 text-right">
-                        <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-700 ring-1 ring-rose-200 text-xs">{lo}%</span>
-                      </td>
-                      <td className="p-2 text-right">
-                        <a
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-white hover:bg-sky-700"
-                          href={`/dashboard/${r.department_code}`}
-                          title="เปิดแดชบอร์ดหน่วยงาน"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                          เปิดดู
-                        </a>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {!filteredAll.rows.length && (
-                  <tr>
-                    <td className="p-4 text-slate-500" colSpan={7}>
-                      ไม่มีข้อมูล
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between gap-2 border-t border-sky-100 bg-white px-3 py-2 text-xs text-slate-600">
-            <div>
-              แสดง {(filteredAll.total === 0 ? 0 : (page - 1) * pageSize + 1).toLocaleString()} -{" "}
-              {Math.min(filteredAll.total, page * pageSize).toLocaleString()} จาก{" "}
-              {filteredAll.total.toLocaleString()} รายการ
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                className="rounded-lg border border-sky-200 px-2 py-1 hover:bg-sky-50 disabled:opacity-60"
-                onClick={() => changePage(page - 1)}
-                disabled={page <= 1}
-              >
-                ก่อนหน้า
-              </button>
-              <span>หน้า {page} / {filteredAll.pages}</span>
-              <button
-                className="rounded-lg bg-sky-600 px-2 py-1 text-white hover:bg-sky-700 disabled:opacity-60"
-                onClick={() => changePage(page + 1)}
-                disabled={page >= filteredAll.pages}
-              >
-                ถัดไป
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-/* ----------------- UI Components ----------------- */
-function ErrorAlert({ message }: { message: string }) {
-  return (
-    <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-red-800">
-      <div className="flex items-start gap-2">
-        <span className="text-lg">⚠️</span>
-        <div>
-          <div className="font-medium">เกิดข้อผิดพลาด</div>
-          <div className="text-sm">{message}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function KpiCard({ title, value, emphasize, icon }: { title: string; value: string | number; emphasize?: boolean; icon?: string }) {
-  return (
-    <div className={`group relative overflow-hidden rounded-2xl border bg-white p-4 ring-1 ring-transparent transition hover:shadow-md ${
-      emphasize ? "border-sky-200 ring-sky-100" : "border-slate-200"
-    }`}>
-      <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-sky-50 opacity-70 transition group-hover:scale-110" />
-      <div className="text-xs text-slate-500">{title}</div>
-      <div className={`mt-1 ${emphasize ? "text-2xl" : "text-xl"} font-semibold tracking-tight text-slate-900`}>{value}</div>
-      {icon && <div className="absolute bottom-2 right-3 text-xl opacity-70">{icon}</div>}
-    </div>
-  );
-}
-
-function KpiSkeleton() {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="h-20 animate-pulse rounded-2xl border border-slate-200 bg-slate-100" />
-      ))}
-    </div>
-  );
-}
-
-function ChartSkeleton({ height = 260 }: { height?: number }) {
-  return <div style={{ height }} className="w-full animate-pulse rounded-xl border border-slate-200 bg-slate-100" />;
-}
-
-function ChartCard({
-  title,
-  children,
-  loading,
-  onRefresh,
-}: {
-  title: string;
-  children: React.ReactNode;
-  loading?: boolean;
-  onRefresh?: () => void;
-}) {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-sky-100 bg-white">
-      <div className="flex items-center justify-between gap-3 border-b border-sky-200 bg-gradient-to-r from-sky-50 to-sky-100 px-3 py-2">
-        <div className="font-medium text-slate-900">{title}</div>
-        {onRefresh && (
-          <button
-            onClick={onRefresh}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 px-2 py-1 text-xs text-slate-700 hover:bg-sky-50"
-            title="รีเฟรช"
-          >
-            <RefreshCcw className="h-3.5 w-3.5" />
-            รีเฟรช
-          </button>
         )}
       </div>
-      <div className="p-3">{loading ? <ChartSkeleton /> : children}</div>
     </div>
   );
 }
 
-function Segmented({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { label: string; value: string }[];
-}) {
+function TrendTooltip({ active, payload }: any) {
+  if (!active || !payload || !payload.length) return null;
+  const row = payload[0].payload as TrendPoint & { gradeLabel?: string };
   return (
-    <div className="inline-flex items-center rounded-xl border border-sky-200 bg-white p-1 text-xs">
-      {options.map((op) => {
-        const active = op.value === value;
-        return (
-          <button
-            key={op.value}
-            onClick={() => onChange(op.value)}
-            className={`rounded-lg px-3 py-1.5 transition ${active ? "bg-sky-600 text-white" : "text-slate-700 hover:bg-sky-50"}`}
-            aria-pressed={active}
+    <div className="rounded-lg border bg-white px-3 py-2 text-xs shadow-md">
+      <div className="font-semibold text-slate-800">เดือน: {row.bucket}</div>
+      <div className="mt-1 space-y-0.5">
+        <div>คะแนนเฉลี่ย: {row.avg_rating != null ? Number(row.avg_rating).toFixed(2) : "-"}</div>
+        <div>จำนวนคำตอบ: {row.answers}</div>
+        {row.gradeLabel && (
+          <div>
+            ผลการประเมิน:{" "}
+            <span className={gradeBadgeClass(evaluateGrade(row.avg_rating).key)}>
+              {row.gradeLabel}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ========= Page ========= */
+
+export default function ExecOverviewPage() {
+  const surveyId = 1;
+
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string>("");
+
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [participation, setParticipation] = useState<Participation | null>(null);
+  const [rank, setRank] = useState<RankRow[]>([]);
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [commentSummary, setCommentSummary] = useState<CommentSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        setLoading(true);
+        setErr("");
+
+        const qs = `?survey_id=${surveyId}`;
+
+        const [oRes, pRes, rRes, tRes, cRes] = await Promise.all([
+          fetch(`/api/exec/overview${qs}`),
+          fetch(`/api/exec/participation${qs}`),
+          fetch(`/api/exec/rank${qs}`),
+          fetch(`/api/exec/trend${qs}&group=month`),
+          fetch(`/api/comments/summary${qs}`),
+        ]);
+
+        if (!oRes.ok || !pRes.ok || !rRes.ok || !tRes.ok || !cRes.ok) {
+          throw new Error("โหลดข้อมูลภาพรวมไม่สำเร็จ");
+        }
+
+        const [o, p, r, t, c] = await Promise.all([
+          oRes.json(),
+          pRes.json(),
+          rRes.json(),
+          tRes.json(),
+          cRes.json(),
+        ]);
+
+        if (!cancelled) {
+          setOverview(o as Overview);
+          setParticipation(p as Participation);
+          setRank(r as RankRow[]);
+          setTrend(t as TrendPoint[]);
+          setCommentSummary(c as CommentSummary);
+        }
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message || "เกิดข้อผิดพลาด");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [surveyId]);
+
+  const grade = useMemo(() => evaluateGrade(overview?.avg_score ?? null), [overview]);
+
+  const rankData = useMemo(() => {
+    const withScore = (rank || []).filter((r) => r.score != null);
+    const top10 = withScore.slice(0, 10);
+    return top10.map((row) => ({
+      ...row,
+      score: row.score != null ? Number(row.score) : null,
+      gradeLabel: evaluateGrade(row.score).label,
+    }));
+  }, [rank]);
+
+  const trendData = useMemo(
+    () =>
+      (trend || []).map((row) => ({
+        ...row,
+        avg_rating: row.avg_rating != null ? Number(row.avg_rating) : null,
+        gradeLabel: evaluateGrade(row.avg_rating).label,
+      })),
+    [trend]
+  );
+
+  const sentCounts = useMemo(() => {
+    const base = { positive: 0, neutral: 0, negative: 0 };
+    if (!commentSummary) return base;
+    for (const s of commentSummary.bySent || []) {
+      base[s.sentiment] = s.cnt;
+    }
+    return base;
+  }, [commentSummary]);
+
+  const topThemes = useMemo(
+    () => (commentSummary?.byTheme || []).slice(0, 8),
+    [commentSummary]
+  );
+
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-sky-50 via-white to-indigo-50 shadow-sm"
+      >
+        <div className="absolute inset-0">
+          <div className="absolute -top-20 -right-20 h-56 w-56 rounded-full bg-sky-200/40 blur-3xl" />
+          <div className="absolute -bottom-20 -left-20 h-56 w-56 rounded-full bg-indigo-200/40 blur-3xl" />
+        </div>
+        <div className="relative grid gap-4 md:grid-cols-[1fr_auto] p-6">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-xs text-sky-700 ring-1 ring-sky-200 shadow-sm">
+              <LayoutDashboard className="size-3.5" /> RMU • University Overview
+            </div>
+            <h1 className="mt-2 text-2xl md:text-3xl font-semibold tracking-tight">
+              ภาพรวมมหาวิทยาลัย
+            </h1>
+          </div>
+          {overview && (
+            <div className="flex flex-col items-end justify-center gap-2 text-right">
+              <div className="flex flex-wrap gap-2 justify-end">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-3 py-1 text-xs ring-1 ring-sky-200">
+                  <Building2 className="size-3.5 text-sky-600" />
+                  หน่วยงานรวม:{" "}
+                  <span className="font-semibold text-slate-800">
+                    {overview.departments_count}
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-3 py-1 text-xs ring-1 ring-sky-200">
+                  <Users className="size-3.5 text-sky-600" />
+                  ครั้งการทำแบบประเมิน:{" "}
+                  <span className="font-semibold text-slate-800">
+                    {overview.responses_count}
+                  </span>
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+
+      {/* Loading / Error */}
+      {loading && <div className="text-sm text-slate-500">กำลังโหลดข้อมูลภาพรวม…</div>}
+      {!loading && err && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {err}
+        </div>
+      )}
+
+      {!loading && !err && (
+        <>
+          {/* KPI Cards */}
+          <div className="grid gap-4 md:grid-cols-4">
+            {/* Avg Score */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-sky-100 via-white to-indigo-100 shadow-sm md:col-span-2"
+            >
+              <div className="absolute -top-14 -right-14 h-40 w-40 rounded-full bg-sky-200/50 blur-3xl" />
+              <div className="absolute -bottom-20 -left-20 h-56 w-56 rounded-full bg-indigo-200/40 blur-3xl" />
+              <div className="relative p-5 md:p-6">
+                <div className="inline-flex items-center gap-2 text-xs text-sky-700">
+                  <TrendingUp className="size-4" /> คะแนนเฉลี่ยรวมมหาวิทยาลัย
+                </div>
+                <div className="mt-1 flex items-baseline gap-3">
+                  <div className="text-4xl md:text-5xl font-semibold tracking-tight text-gray-900">
+                    {overview?.avg_score != null
+                      ? Number(overview.avg_score).toFixed(2)
+                      : "-"}
+                  </div>
+                  <span className="text-sm text-gray-500">/ 5.00</span>
+                </div>
+                <div className="mt-2 text-sm text-gray-600 flex flex-wrap items-center gap-2">
+                  ผลการประเมิน:
+                  <span className={gradeBadgeClass(grade.key)}>{grade.label}</span>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Participation */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl border bg-white p-5 shadow-sm"
+            >
+              <div className="inline-flex items-center gap-2 text-xs text-slate-600">
+                <Users className="size-4" /> การมีส่วนร่วม
+              </div>
+              <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+                {participation?.total_responses ?? 0}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                ครั้งการทำแบบประเมินทั้งหมด
+              </div>
+              {participation && (
+                <div className="mt-3 space-y-1 text-xs text-slate-600">
+                </div>
+              )}
+            </motion.div>
+
+            {/* Departments / Questions */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl border bg-white p-5 shadow-sm"
+            >
+              <div className="inline-flex items-center gap-2 text-xs text-slate-600">
+                <Building2 className="size-4" /> ภาพรวมระบบ
+              </div>
+              <div className="mt-2 flex flex-col gap-1 text-sm text-slate-700">
+                <div className="flex items-center justify-between">
+                  <span>หน่วยงานในระบบ</span>
+                  <span className="font-semibold">
+                    {overview?.departments_count ?? 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>จำนวนคำถามทั้งหมด</span>
+                  <span className="font-semibold">
+                    {overview?.questions_count ?? 0}
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Charts: Rank + Trend */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Rank Chart */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl border bg-white p-4 shadow-sm flex flex-col"
+            >
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                    <BarChart3 className="size-4 text-sky-600" />
+                    จัดอันดับหน่วยงานตามคะแนนเฉลี่ย (Top 10)
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 h-72">
+                {rankData.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-sm text-slate-500">
+                    ยังไม่มีข้อมูลจัดอันดับ
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={rankData}
+                      layout="vertical"
+                      margin={{ left: 80, right: 16, top: 8, bottom: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis type="number" domain={[0, 5]} />
+                      <YAxis
+                        type="category"
+                        dataKey="department_name"
+                        width={110}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <RechartsTooltip content={<RankTooltip />} />
+                      <Bar dataKey="score" radius={[4, 4, 4, 4]} fill="#38bdf8" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </motion.div>
+
+            {/* Trend Chart */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl border bg-white p-4 shadow-sm flex flex-col"
+            >
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                    <LineChartIcon className="size-4 text-indigo-600" />
+                    เทรนด์คะแนนเฉลี่ยรายเดือน
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 h-72">
+                {trendData.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-sm text-slate-500">
+                    ยังไม่มีข้อมูลเทรนด์
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={trendData} margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="bucket"
+                        tick={{ fontSize: 11 }}
+                        padding={{ left: 4, right: 4 }}
+                      />
+                      <YAxis domain={[0, 5]} />
+                      <RechartsTooltip content={<TrendTooltip />} />
+                      <Line
+                        type="monotone"
+                        dataKey="avg_rating"
+                        stroke="#0ea5e9"
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Comment Summary */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl border bg-white p-4 shadow-sm"
           >
-            {op.label}
-          </button>
-        );
-      })}
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                  <MessageCircle className="size-4 text-sky-600" />
+                  สรุปความคิดเห็นทั้งมหาวิทยาลัย
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[220px,1fr] items-start">
+              {/* Sentiment cards */}
+              <div className="space-y-2">
+                <div className="rounded-xl border bg-slate-50/80 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                    อารมณ์ความคิดเห็น
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-2 py-1.5">
+                      <span className="flex items-center gap-1 text-emerald-700">
+                        <Smile className="size-3.5" /> เชิงบวก
+                      </span>
+                      <span className="font-semibold">
+                        {sentCounts.positive ?? 0}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-2 py-1.5">
+                      <span className="flex items-center gap-1 text-slate-700">
+                        <Meh className="size-3.5" /> กลาง ๆ
+                      </span>
+                      <span className="font-semibold">
+                        {sentCounts.neutral ?? 0}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-rose-50 px-2 py-1.5">
+                      <span className="flex items-center gap-1 text-rose-700">
+                        <Frown className="size-3.5" /> เชิงลบ
+                      </span>
+                      <span className="font-semibold">
+                        {sentCounts.negative ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
     </div>
   );
 }

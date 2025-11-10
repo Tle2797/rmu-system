@@ -5,10 +5,10 @@ import {
   getDeptComments,
   exportDeptExcel,
   exportDeptPdf,
-  getDeptYearlySummary, // 👈 เพิ่ม import
+  getDeptYearlyStats, // ✅ ตรงกับ controller แล้ว
 } from "../controllers/dashboard.controller";
 
-/** helper: แปลง ArrayBuffer -> Uint8Array ให้แน่ชัด (กัน TS เตือน) */
+/** helper: แปลง ArrayBuffer -> Uint8Array */
 const toUint8 = (data: ArrayBuffer | Uint8Array) =>
   data instanceof Uint8Array ? data : new Uint8Array(data);
 
@@ -17,8 +17,8 @@ export default (app: Elysia) =>
     // 1) สรุปคะแนนรายคำถามของหน่วยงาน
     .get("/departments/:code/summary", async ({ params, query, set }) => {
       const surveyId = Number(query.survey_id ?? 1);
-      const from = (query.from as string) || undefined; // YYYY-MM-DD
-      const to = (query.to as string) || undefined; // YYYY-MM-DD (inclusive; controller จะ +1 วันเอง)
+      const from = (query.from as string) || undefined;
+      const to = (query.to as string) || undefined;
 
       const result = await getDeptSummary(params.code, surveyId, from, to);
       if ("error" in result) set.status = 404;
@@ -52,19 +52,16 @@ export default (app: Elysia) =>
       const to = (query.to as string) || undefined;
 
       const x = await exportDeptExcel(params.code, surveyId, from, to);
-
-      // type guard: ถ้าเป็น error object
       if (!(x instanceof ArrayBuffer) && !(x instanceof Uint8Array)) {
         set.status = 400;
-        return x; // { error: "..." }
+        return x;
       }
 
       set.headers["Content-Type"] =
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      set.headers["Content-Disposition"] =
-        `attachment; filename="report_${params.code}.xlsx"`;
+      set.headers["Content-Disposition"] = `attachment; filename="report_${params.code}.xlsx"`;
 
-      return toUint8(x); // คืนเป็น Uint8Array ชัดเจน
+      return toUint8(x);
     })
 
     // 4) Export PDF (.pdf)
@@ -74,25 +71,22 @@ export default (app: Elysia) =>
       const to = (query.to as string) || undefined;
 
       const x = await exportDeptPdf(params.code, surveyId, from, to);
-
-      // type guard: ถ้าเป็น error object
       if (!(x instanceof Uint8Array)) {
         set.status = 400;
-        return x; // { error: "..." }
+        return x;
       }
 
       set.headers["Content-Type"] = "application/pdf";
-      set.headers["Content-Disposition"] =
-        `attachment; filename="report_${params.code}.pdf"`;
+      set.headers["Content-Disposition"] = `attachment; filename="report_${params.code}.pdf"`;
 
-      return x; // pdf-lib ให้มาเป็น Uint8Array
+      return x;
     })
 
     // 5) ✅ สรุปผลรายปีของหน่วยงาน
     .get("/departments/:code/yearly", async ({ params, query, set }) => {
       const surveyId = Number(query.survey_id ?? 1);
 
-      const result = await getDeptYearlySummary(params.code, surveyId);
+      const result = await getDeptYearlyStats(params.code, surveyId);
       if ("error" in result) set.status = 404;
       return result;
     });

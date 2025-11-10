@@ -119,7 +119,7 @@ export default function Sidebar({
             match: "exact",
           },
           {
-            label: "จัดอันดับ/Heatmap",
+            label: "จัดอันดับหน่วยงาน",
             href: "/exec/rank",
             iconKey: "bar",
             match: "exact",
@@ -288,14 +288,6 @@ export default function Sidebar({
                   <div className="text-[12px] text-sky-100/80">{roleTH}</div>
                 </div>
               </div>
-              {departmentCode && (
-                <div className="mt-3 text-[12px] px-3 py-1.5 rounded-lg bg-white/10 text-sky-50/90">
-                  หน่วยงาน:{" "}
-                  <span className="font-medium text-white">
-                    {departmentCode}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
 

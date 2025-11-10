@@ -104,7 +104,6 @@ export default function GlobalFilters({ value, onChange }: Props) {
           <span className="inline-flex h-2 w-2 rounded-full bg-sky-500" />
           <span className="font-medium">ตัวกรองข้อมูล</span>
         </div>
-        <span className="text-xs text-slate-500">ช่วงที่เลือก: <span className="font-medium">{dateHint}</span></span>
       </div>
 
       {/* เนื้อหา */}
